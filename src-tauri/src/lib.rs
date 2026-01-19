@@ -3,7 +3,6 @@ use data::{AppDataStore, HistoryItem, FavoriteItem, AppSettings};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewBuilder, Emitter, Listener, Url};
 use futures_util::StreamExt;
 use tokio::io::{AsyncWriteExt, AsyncSeekExt};
-use urlencoding;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::path::PathBuf;
@@ -104,7 +103,7 @@ async fn check_and_redirect(webview: tauri::Webview, url: String) {
                    urlencoding::encode(&url), 
                    urlencoding::encode(&err_msg));
                
-               let _ = webview.eval(&format!("window.location.replace('{}')", error_url));
+               let _ = webview.eval(format!("window.location.replace('{}')", error_url));
             }
         }
     }
@@ -121,7 +120,7 @@ fn navigate(app: AppHandle, label: String, url: String) {
     if let Some(webview) = app.get_webview(&label) {
         let _ = webview.set_focus();
         // Use eval for navigation as load_url is not available on Webview struct directly in this version
-        let _ = webview.eval(&format!("window.location.assign('{}')", url));
+        let _ = webview.eval(format!("window.location.assign('{}')", url));
         
         // Check connection
         let wv = webview.clone();
@@ -189,6 +188,7 @@ fn get_settings(state: tauri::State<'_, AppDataStore>) -> AppSettings {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn save_settings(state: tauri::State<'_, AppDataStore>, app: AppHandle, homepage: String, search_engine: String, theme: String, accent_color: String, vertical_tabs: bool, rounded_corners: bool) {
     state.update_settings(homepage, search_engine, theme, accent_color, vertical_tabs, rounded_corners);
     state.save();
@@ -196,21 +196,21 @@ fn save_settings(state: tauri::State<'_, AppDataStore>, app: AppHandle, homepage
 }
 
 #[tauri::command]
-fn open_file(path: String) {
+fn open_file(_path: String) {
     #[cfg(target_os = "windows")]
     {
         let _ = std::process::Command::new("explorer")
-            .arg(path)
+            .arg(_path)
             .spawn();
     }
 }
 
 #[tauri::command]
-fn show_in_folder(path: String) {
+fn show_in_folder(_path: String) {
     #[cfg(target_os = "windows")]
     {
         let _ = std::process::Command::new("explorer")
-            .args(["/select,", &path])
+            .args(["/select,", &_path])
             .spawn();
     }
 }
@@ -567,6 +567,17 @@ async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url
         .inner_size(1024.0, 768.0)
         .decorations(true) // Enable native window controls (Close, Minimize, Maximize)
         .focused(true)
+        .initialization_script(&get_lumina_stealth_script())
+        .on_web_resource_request(|request, response| {
+            let url = request.uri().to_string();
+            if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
+                println!("Lumina HostBlock: {}", url);
+                *response = tauri::http::Response::builder()
+                    .status(403)
+                    .body(std::borrow::Cow::Owned(Vec::new()))
+                    .unwrap();
+            }
+        })
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -603,6 +614,51 @@ fn focus_window(app: AppHandle, label: String) {
     }
 }
 
+const BLOCKED_DOMAINS: &[&str] = &[
+    "doubleclick.net",
+    "googleadservices.com",
+    "googlesyndication.com",
+    "adnxs.com",
+    "rubiconproject.com",
+    "taboola.com",
+    "outbrain.com",
+    "amazon-adsystem.com",
+    "adservice.google.com",
+    "moatads.com",
+    "criteo.com",
+    "pubmatic.com",
+    "openx.net",
+    "smartadserver.com",
+];
+
+#[tauri::command]
+fn clean_page(app: AppHandle) {
+    let script = r#"
+        (function() {
+            const elements = document.querySelectorAll('div, iframe, section, aside, span, a, img, button');
+            let count = 0;
+            elements.forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.position === 'fixed' || style.position === 'absolute') {
+                    // Check if it's likely an overlay/ad (high z-index or full width/height)
+                    if ((style.zIndex && parseInt(style.zIndex) > 10) || 
+                        (el.offsetWidth > window.innerWidth * 0.9 && el.offsetHeight > window.innerHeight * 0.9)) {
+                         el.remove();
+                         count++;
+                    }
+                }
+            });
+            console.log("Lumina Clean Page: Removed " + count + " floating elements.");
+        })();
+    "#;
+    
+    for (label, window) in app.webview_windows() {
+        if label != "main" {
+            let _ = window.eval(script);
+        }
+    }
+}
+
 #[tauri::command]
 async fn open_flash_window(app: AppHandle, url: String) -> Result<(), String> {
     let label = format!("flash-{}", chrono::Utc::now().timestamp_micros());
@@ -615,16 +671,121 @@ async fn open_flash_window(app: AppHandle, url: String) -> Result<(), String> {
         .center()
         .focused(true)
         .skip_taskbar(true)
+        .initialization_script(&get_lumina_stealth_script())
+        .on_web_resource_request(|request, response| {
+            let url = request.uri().to_string();
+            if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
+                println!("Lumina HostBlock: {}", url);
+                *response = tauri::http::Response::builder()
+                    .status(403)
+                    .body(std::borrow::Cow::Owned(Vec::new()))
+                    .unwrap();
+            }
+        })
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-fn create_desktop_shortcut(name: &str, url: &str, icon_path: Option<std::path::PathBuf>) -> std::io::Result<()> {
+fn get_lumina_stealth_script() -> String {
+    r#"
+    (function() {
+        console.log("Lumina Stealth Protocol: Activated");
+
+        // 1. CSS Injection for Ad Blocking
+        const style = document.createElement('style');
+        style.textContent = `
+            /* Core Ad Patterns */
+            iframe[src*="ads"], iframe[id*="google_ads"], iframe[src*="doubleclick"], 
+            iframe[src*="amazon-adsystem"], iframe[src*="adnxs"],
+            
+            /* Common Ad Containers */
+            div[class*="ad-"], div[id*="ad-"],
+            div[class*="ads-"], div[id*="ads-"],
+            div[class*="sponsor"], div[id*="sponsor"],
+            div[class*="banner"], div[id*="banner"],
+            
+            /* Google & Networks */
+            ins.adsbygoogle, div[id^="google_ads_"],
+            
+            /* Native Ad Widgets */
+            div[id*="taboola"], div[class*="taboola"],
+            div[id*="outbrain"], div[class*="outbrain"],
+            
+            /* Overlays & Popups */
+            div[class*="popup"][class*="ad"], div[class*="modal"][class*="ad"],
+            div[id*="popup"][id*="ad"], div[id*="modal"][id*="ad"],
+            
+            /* Video Ads */
+            div[class*="video-ad"], .ad-showing
+            
+            { display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important; pointer-events: none !important; overflow: hidden !important; }
+        `;
+        
+        function injectCSS() {
+            const head = document.head || document.documentElement;
+            if (head) head.appendChild(style);
+        }
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', injectCSS);
+        } else {
+            injectCSS();
+        }
+
+        // 2. Global Ad-Intervention (Overlay Remover)
+        function killAdOverlays() {
+            const keywords = ['modal', 'popup', 'overlay', 'interstitial', 'ads', 'promo', 'subscribe', 'sign-up'];
+            // Select potential overlays
+            const elements = document.querySelectorAll('div, section, aside, iframe');
+            
+            elements.forEach(el => {
+                const id = (el.id || '').toLowerCase();
+                const cls = (el.className || '').toString().toLowerCase();
+                const style = window.getComputedStyle(el);
+                
+                // Check for fixed/absolute positioning + high z-index
+                const isFloating = style.position === 'fixed' || style.position === 'absolute';
+                const isHighZ = parseInt(style.zIndex) > 50;
+                
+                // Check for keywords
+                const hasKeyword = keywords.some(k => id.includes(k) || cls.includes(k));
+                
+                if (isFloating && isHighZ && hasKeyword) {
+                     console.log("Lumina Ad-Intervention: Killing overlay ->", el);
+                     el.remove();
+                }
+                
+                // Also kill iframes that are likely ads but missed by CSS
+                if (el.tagName === 'IFRAME' && (id.includes('google') || cls.includes('ads'))) {
+                    el.remove();
+                }
+            });
+        }
+
+        // 3. Event Listeners (ESC & Periodic)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                console.log("Lumina: ESC pressed. Triggering Ad-Intervention & Stop.");
+                killAdOverlays();
+                window.stop(); // Stop infinite scripts
+            }
+        });
+
+        // Run periodically to catch delayed popups
+        setTimeout(killAdOverlays, 2000);
+        setTimeout(killAdOverlays, 5000);
+        setTimeout(killAdOverlays, 10000);
+        
+    })();
+    "#.to_string()
+}
+
+fn create_desktop_shortcut(_name: &str, _url: &str, _icon_path: Option<std::path::PathBuf>) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
         // Sanitize filename
-        let safe_name: String = name.chars()
+        let safe_name: String = _name.chars()
             .map(|c| if c.is_alphanumeric() || c == ' ' { c } else { '_' })
             .collect();
         
@@ -634,7 +795,7 @@ fn create_desktop_shortcut(name: &str, url: &str, icon_path: Option<std::path::P
         let exe_path = exe.to_str().unwrap();
         
         // Escape quotes for PowerShell
-        let safe_url = url.replace("'", "''");
+        let safe_url = _url.replace("'", "''");
         
         let mut script = format!(
             "$WshShell = New-Object -comObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('{}'); $Shortcut.TargetPath = '{}'; $Shortcut.Arguments = '--pwa-url=\"{}\"';",
@@ -643,7 +804,7 @@ fn create_desktop_shortcut(name: &str, url: &str, icon_path: Option<std::path::P
             safe_url
         );
         
-        if let Some(icon) = icon_path {
+        if let Some(icon) = _icon_path {
             if let Some(icon_str) = icon.to_str() {
                 script.push_str(&format!(" $Shortcut.IconLocation = '{}';", icon_str));
             }
@@ -699,46 +860,8 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
 
     let label_clone = label.clone();
     
-    let ad_block_script = r#"
+    let ad_block_script = format!("{}\n{}", get_lumina_stealth_script(), r#"
         (function() {
-            const style = document.createElement('style');
-            style.textContent = `
-                /* Common Ad Banners & Iframes */
-                iframe[src*="ads"], 
-                iframe[id*="google_ads"],
-                iframe[src*="doubleclick.net"],
-                iframe[src*="amazon-adsystem"],
-                
-                /* Common Ad Divs & Classes - Commented out aggressive selectors */
-                /* div[class*="ad-"], */ 
-                /* div[id*="ad-"], */
-                /* div[class*="ads-"], */
-                /* div[id*="ads-"], */
-                div[class*="sponsor"],
-                div[id*="sponsor"],
-                
-                /* Google Ads */
-                ins.adsbygoogle,
-                div[id^="google_ads_"],
-                a[href*="doubleclick.net"],
-                a[href*="googleadservices.com"],
-                
-                /* Taboola / Outbrain */
-                div[id*="taboola-"],
-                div[class*="taboola"],
-                div[id*="outbrain"],
-                div[class*="outbrain"],
-                
-                /* Popup Overlays */
-                div[class*="popup"][class*="ad"],
-                div[class*="modal"][class*="ad"],
-                
-                /* Sticky Footers */
-                div[class*="sticky-footer"][class*="ad"]
-                
-                { display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important; pointer-events: none !important; }
-            `;
-            
             // Helper to generate UUID for new tabs
             function generateUUID() {
                 if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -788,23 +911,8 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
                     }
                 }
             }, true);
-
-            function inject() {
-                const head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
-                if (head) {
-                    head.appendChild(style);
-                } else {
-                    setTimeout(inject, 50);
-                }
-            }
-            
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', inject);
-            } else {
-                inject();
-            }
         })();
-    "#;
+    "#);
 
     // Attempt to get invoke key
      let invoke_key = app.invoke_key();
@@ -978,19 +1086,12 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
         .on_web_resource_request(|request, response| {
              // Lumina Stealth: Rust-side Ad/Tracker Blocking
              let url = request.uri().to_string();
-             if url.contains("doubleclick.net") || 
-                url.contains("googlesyndication.com") || 
-                url.contains("google-analytics.com") ||
-                url.contains("facebook.net") ||
-                url.contains("adnxs.com") ||
-                url.contains("criteo.com") ||
-                url.contains("taboola.com") ||
-                url.contains("outbrain.com") {
+             if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
                    println!("Lumina Stealth blocked: {}", url);
                    *response = tauri::http::Response::builder()
-                       .status(403)
-                       .body(std::borrow::Cow::Owned(Vec::new()))
-                       .unwrap();
+                    .status(403)
+                    .body(std::borrow::Cow::Owned(Vec::new()))
+                    .unwrap();
             }
         })
         .on_download(move |_webview, event| {
@@ -998,7 +1099,7 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
                 tauri::webview::DownloadEvent::Requested { url, destination: _ } => {
                     println!("Download requested: {}", url);
                     let url_str = url.to_string();
-                    let mut file_name = url.to_string().split('/').last().unwrap_or("file").to_string();
+                    let mut file_name = url.as_str().split('/').next_back().unwrap_or("file").to_string();
                     if file_name.is_empty() {
                         file_name = "downloaded_file".to_string();
                     }
@@ -1214,7 +1315,7 @@ async fn download_file(app: AppHandle, url: String, file_name: String) {
             while let Some(item) = stream.next().await {
                 match item {
                     Ok(chunk) => {
-                        if let Err(_) = file.write_all(&chunk).await {
+                        if (file.write_all(&chunk).await).is_err() {
                              manager.update_status(&url, "failed");
                              return;
                         }
@@ -1324,6 +1425,17 @@ pub fn run() {
                         .inner_size(1024.0, 768.0)
                         .decorations(true)
                         .focused(true)
+                        .initialization_script(&get_lumina_stealth_script())
+                        .on_web_resource_request(|request, response| {
+                            let url = request.uri().to_string();
+                            if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
+                                println!("Lumina HostBlock: {}", url);
+                                *response = tauri::http::Response::builder()
+                                    .status(403)
+                                    .body(std::borrow::Cow::Owned(Vec::new()))
+                                    .unwrap();
+                            }
+                        })
                         .build();
                  }
                  if let Some(main) = app.get_webview_window("main") {
@@ -1446,7 +1558,8 @@ pub fn run() {
             open_pwa_window,
             get_open_windows,
             focus_window,
-            open_flash_window
+            open_flash_window,
+            clean_page
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

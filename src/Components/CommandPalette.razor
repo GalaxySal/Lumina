@@ -56,6 +56,10 @@
                          <span class="icon">⚙️</span>
                          <span class="text">Open Settings</span>
                     </div>
+                    <div class="command-item @(SelectedIndex == baseIndex + 3 ? "selected" : "")" @onclick="@(() => SelectAction(3))" @onmouseover="@(() => SelectedIndex = baseIndex + 3)">
+                         <span class="icon">🧹</span>
+                         <span class="text">Clean Page (Force Mode)</span>
+                    </div>
                 </div>
             }
             else
@@ -71,6 +75,13 @@
                         <span class="icon">🔍</span>
                         <span class="text">Search Google for <strong>@SearchQuery</strong></span>
                     </div>
+                    @if (SearchQuery.Trim().ToLower() == "clean" || SearchQuery.Trim().ToLower() == "clean-page")
+                    {
+                        <div class="command-item @(SelectedIndex == baseIndex + 2 ? "selected" : "")" @onclick="@(() => SelectAction(2))" @onmouseover="@(() => SelectedIndex = baseIndex + 2)">
+                             <span class="icon">🧹</span>
+                             <span class="text">Run <strong>Clean Page</strong></span>
+                        </div>
+                    }
                 </div>
             }
         </div>
@@ -296,7 +307,8 @@
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
-        int totalItems = FilteredWindows.Count + (string.IsNullOrWhiteSpace(SearchQuery) ? 3 : 2);
+        int actionCount = string.IsNullOrWhiteSpace(SearchQuery) ? 4 : ((SearchQuery.Trim().ToLower() == "clean" || SearchQuery.Trim().ToLower() == "clean-page") ? 3 : 2);
+        int totalItems = FilteredWindows.Count + actionCount;
 
         if (e.Key == "Escape")
         {
@@ -358,17 +370,25 @@
             if (index == 0) targetUrl = "https://google.com";
             else if (index == 1) targetUrl = "https://lumina-home"; // Internal
             else if (index == 2) targetUrl = "https://lumina-settings"; // Internal
+            else if (index == 3) { await CleanPage(); return; }
         }
         else
         {
             if (index == 0) targetUrl = SearchQuery;
             else if (index == 1) targetUrl = "https://www.google.com/search?q=" + System.Web.HttpUtility.UrlEncode(SearchQuery);
+            else if (index == 2 && (SearchQuery.Trim().ToLower() == "clean" || SearchQuery.Trim().ToLower() == "clean-page")) { await CleanPage(); return; }
         }
 
         if (!string.IsNullOrEmpty(targetUrl))
         {
             await OnNavigate.InvokeAsync(targetUrl);
         }
+        Close();
+    }
+
+    private async Task CleanPage()
+    {
+        await JsRuntime.InvokeVoidAsync("window.lumina.invoke", "clean_page");
         Close();
     }
 
