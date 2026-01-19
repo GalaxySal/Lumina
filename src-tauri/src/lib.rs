@@ -635,6 +635,13 @@ const BLOCKED_DOMAINS: &[&str] = &[
 fn clean_page(app: AppHandle) {
     let script = r#"
         (function() {
+            // Domain Awareness for Clean Page
+            const host = window.location.hostname;
+            if (host.includes('google.com') || host.includes('gemini') || host.includes('youtube.com')) {
+                 console.log("Lumina Clean Page: Friendly domain detected (" + host + "), aborting force clean.");
+                 return;
+            }
+
             const elements = document.querySelectorAll('div, iframe, section, aside, span, a, img, button');
             let count = 0;
             elements.forEach(el => {
