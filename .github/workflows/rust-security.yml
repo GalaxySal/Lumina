@@ -22,6 +22,7 @@ jobs:
 
       - name: Run cargo audit
         run: cargo audit
+        working-directory: src-tauri
         continue-on-error: true # Don't fail the build on advisory, just report
 
   clippy:
@@ -41,3 +42,4 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy -- -D warnings
+        working-directory: src-tauri
