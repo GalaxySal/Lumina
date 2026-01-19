@@ -567,7 +567,7 @@ async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url
         .inner_size(1024.0, 768.0)
         .decorations(true) // Enable native window controls (Close, Minimize, Maximize)
         .focused(true)
-        .initialization_script(&get_lumina_stealth_script())
+        .initialization_script(get_lumina_stealth_script())
         .on_web_resource_request(|request, response| {
             let url = request.uri().to_string();
             if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
@@ -671,7 +671,7 @@ async fn open_flash_window(app: AppHandle, url: String) -> Result<(), String> {
         .center()
         .focused(true)
         .skip_taskbar(true)
-        .initialization_script(&get_lumina_stealth_script())
+        .initialization_script(get_lumina_stealth_script())
         .on_web_resource_request(|request, response| {
             let url = request.uri().to_string();
             if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
@@ -1425,7 +1425,7 @@ pub fn run() {
                         .inner_size(1024.0, 768.0)
                         .decorations(true)
                         .focused(true)
-                        .initialization_script(&get_lumina_stealth_script())
+                        .initialization_script(get_lumina_stealth_script())
                         .on_web_resource_request(|request, response| {
                             let url = request.uri().to_string();
                             if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
