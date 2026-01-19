@@ -29,4 +29,5 @@ tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
 url = "2.5.8"
 image = "0.24"
+adblock = "0.12.1"
 
