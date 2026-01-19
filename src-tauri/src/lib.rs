@@ -735,6 +735,13 @@ fn get_lumina_stealth_script() -> String {
 
         // 2. Global Ad-Intervention (Overlay Remover)
         function killAdOverlays() {
+            // Lumina Friendly Exception: Skip aggressive removal on Google and Gemini
+            const host = window.location.hostname;
+            if (host.includes('google.com') || host.includes('gemini') || host.includes('youtube.com')) {
+                console.log("Lumina Stealth: Friendly domain detected (" + host + "), skipping aggressive overlay removal.");
+                return;
+            }
+
             const keywords = ['modal', 'popup', 'overlay', 'interstitial', 'ads', 'promo', 'subscribe', 'sign-up'];
             // Select potential overlays
             const elements = document.querySelectorAll('div, section, aside, iframe');
