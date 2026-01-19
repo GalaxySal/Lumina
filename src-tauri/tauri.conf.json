@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lumina",
+  "version": "0.2.0",
+  "identifier": "com.nazim.lumina-browser",
+  "build": {
+    "beforeDevCommand": "dotnet watch run --project src/tauri-browser.csproj",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "dotnet publish -c release src/tauri-browser.csproj -o dist",
+    "frontendDist": "../dist/wwwroot"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Lumina Browser",
+        "width": 800,
+        "height": 600,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page Not Found</title>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --text-color: #e0e0e0;
+            --accent-color: #3b82f6;
+            --secondary-text: #9ca3af;
+            --card-bg: #2d2d2d;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 600px;
+            padding: 2rem;
+        }
+
+        .icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            color: var(--secondary-text);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            color: var(--secondary-text);
+            margin-bottom: 2rem;
+            line-height: 1.5;
+        }
+
+        .url-display {
+            background-color: var(--card-bg);
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-family: monospace;
+            margin-bottom: 2rem;
+            word-break: break-all;
+            display: none; /* Hidden by default */
+        }
+
+        .error-details {
+            font-size: 0.875rem;
+            color: #ef4444;
+            margin-bottom: 2rem;
+            display: none; /* Hidden by default */
+        }
+
+        .buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button.secondary {
+            background-color: transparent;
+            border: 1px solid var(--secondary-text);
+            color: var(--text-color);
+        }
+
+        button.secondary:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">:(</div>
+        <h1>This site can't be reached</h1>
+        <div id="urlDisplay" class="url-display"></div>
+        <p id="message">Check your internet connection or the URL.</p>
+        <div id="errorDetails" class="error-details"></div>
+
+        <div class="buttons">
+            <button onclick="tryAgain()">Try Again</button>
+            <button class="secondary" onclick="goHome()">Go Home</button>
+        </div>
+    </div>
+
+    <script>
+        // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetUrl = urlParams.get('url');
+        const errorMsg = urlParams.get('err');
+
+        if (targetUrl) {
+            document.getElementById('urlDisplay').textContent = targetUrl;
+            document.getElementById('urlDisplay').style.display = 'block';
+        }
+
+        if (errorMsg) {
+            document.getElementById('errorDetails').textContent = errorMsg;
+            document.getElementById('errorDetails').style.display = 'block';
+            
+            if (errorMsg.includes("DNS")) {
+                document.getElementById('message').textContent = "We couldn't find the IP address for this server.";
+            } else if (errorMsg.includes("refused")) {
+                document.getElementById('message').textContent = "The server refused the connection.";
+            } else if (errorMsg.includes("timed out")) {
+                document.getElementById('message').textContent = "The connection timed out.";
+            }
+        }
+
+        function tryAgain() {
+            if (targetUrl) {
+                window.location.href = targetUrl;
+            } else {
+                window.history.back();
+            }
+        }
+
+        function goHome() {
+            // This assumes the main app handles 'https://google.com' or similar as home
+            // Or we can just go back to a safe page
+             if (window.__TAURI__) {
+                // If we are in a tab, we might want to load the home page
+                // But the tab is a webview.
+                window.location.href = "https://www.google.com";
+            }
+        }
+    </script>
+</body>
+</html>

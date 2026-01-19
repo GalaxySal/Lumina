@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lumina Browser</title>
+    <base href="/" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+
+  <body>
+    <div id="app"></div>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script>
+        window.setupTabNavigationListener = async (dotNetRef) => {
+            // Global keyboard shortcuts
+            window.addEventListener('keydown', (e) => {
+                // Alt + Space for Command Palette
+                if (e.altKey && e.code === 'Space') {
+                    e.preventDefault();
+                    if (window.commandPaletteRef) {
+                        window.commandPaletteRef.invokeMethodAsync('Toggle');
+                    }
+                }
+                // Ctrl + L for Address Bar
+                if (e.ctrlKey && e.code === 'KeyL') {
+                    e.preventDefault();
+                    const input = document.querySelector('.url-input');
+                    if (input) {
+                        input.select();
+                        input.focus();
+                    }
+                }
+            });
+
+            if (window.__TAURI__ && window.__TAURI__.event) {
+                // Expose Lumina helper for Blazor
+                window.lumina = {
+                    invoke: async (cmd, args) => {
+                        try {
+                            return await window.__TAURI__.core.invoke(cmd, args);
+                        } catch (e) {
+                            console.error(`Lumina Invoke Error [${cmd}]:`, e);
+                            throw e;
+                        }
+                    }
+                };
+
+                await window.__TAURI__.event.listen('tab-navigation', (event) => {
+                    console.log("Navigation event:", event);
+                    dotNetRef.invokeMethodAsync('OnTabNavigation', event.payload.label, event.payload.url);
+                });
+                
+                await window.__TAURI__.event.listen('download-started', (event) => {
+                    console.log("Download started:", event);
+                    dotNetRef.invokeMethodAsync('OnDownloadStarted', event.payload);
+                });
+                
+                await window.__TAURI__.event.listen('download-progress', (event) => {
+                    // console.log("Download progress:", event); // Too noisy
+                    dotNetRef.invokeMethodAsync('OnDownloadProgress', event.payload);
+                });
+
+                await window.__TAURI__.event.listen('download-finished', (event) => {
+                    console.log("Download finished:", event);
+                    dotNetRef.invokeMethodAsync('OnDownloadFinished', event.payload);
+                });
+
+                await window.__TAURI__.event.listen('tab-created', (event) => {
+                    console.log("Tab created:", event);
+                    dotNetRef.invokeMethodAsync('OnTabCreated', event.payload);
+                });
+
+                await window.__TAURI__.event.listen('tab-updated', (event) => {
+                    console.log("Tab updated:", event);
+                    dotNetRef.invokeMethodAsync('OnTabUpdated', event.payload);
+                });
+
+                await window.__TAURI__.event.listen('pwa-can-install', (event) => {
+                    console.log("PWA detected:", event);
+                    dotNetRef.invokeMethodAsync('OnPwaDetected', event.payload.label);
+                });
+            } else {
+                console.warn("Tauri event API not found");
+            }
+        };
+        window.registerCommandPaletteShortcut = (dotNetRef) => {
+             window.commandPaletteRef = dotNetRef;
+        };
+    </script>
+  </body>
+</html>

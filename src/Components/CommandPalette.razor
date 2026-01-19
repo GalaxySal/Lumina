@@ -1,0 +1,413 @@
+@inject IJSRuntime JsRuntime
+@using System.Text.RegularExpressions
+
+<div class="command-palette-overlay @(IsVisible ? "visible" : "")" @onclick="Close">
+    <div class="command-palette-container" @onclick:stopPropagation>
+        <div class="command-palette-input-wrapper">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="search-icon">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
+            <input @ref="inputElement" 
+                   type="text" 
+                   placeholder="Type a command, search, or switch tab..." 
+                   @bind="SearchQuery" 
+                   @bind:event="oninput" 
+                   @onkeydown="HandleKeyDown" 
+                   class="command-palette-input" />
+            <div class="hints">
+                <span class="hint">Shift+Enter <span class="sub">Flash Tab</span></span>
+                <span class="hint">ESC <span class="sub">Close</span></span>
+            </div>
+        </div>
+        
+        <div class="command-palette-results">
+            @if (FilteredWindows.Any())
+            {
+                <div class="command-group">
+                    <div class="group-title">Switch to Tab</div>
+                    @foreach (var (window, i) in FilteredWindows.Select((w, i) => (w, i)))
+                    {
+                        <div class="command-item @(SelectedIndex == i ? "selected" : "")" 
+                             @onclick="@(() => SelectWindow(window))" 
+                             @onmouseover="@(() => SelectedIndex = i)">
+                            <span class="icon">❐</span>
+                            <span class="text">@window.Title</span>
+                            <span class="subtext">@GetDomain(window.Url)</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (string.IsNullOrWhiteSpace(SearchQuery))
+            {
+                <div class="command-group">
+                    <div class="group-title">Suggested</div>
+                    @{ int baseIndex = FilteredWindows.Count; }
+                    <div class="command-item @(SelectedIndex == baseIndex + 0 ? "selected" : "")" @onclick="@(() => SelectAction(0))" @onmouseover="@(() => SelectedIndex = baseIndex + 0)">
+                        <span class="icon">🔍</span>
+                        <span class="text">Search Google</span>
+                        <span class="shortcut">↵</span>
+                    </div>
+                    <div class="command-item @(SelectedIndex == baseIndex + 1 ? "selected" : "")" @onclick="@(() => SelectAction(1))" @onmouseover="@(() => SelectedIndex = baseIndex + 1)">
+                         <span class="icon">🏠</span>
+                         <span class="text">Go Home</span>
+                    </div>
+                    <div class="command-item @(SelectedIndex == baseIndex + 2 ? "selected" : "")" @onclick="@(() => SelectAction(2))" @onmouseover="@(() => SelectedIndex = baseIndex + 2)">
+                         <span class="icon">⚙️</span>
+                         <span class="text">Open Settings</span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="command-group">
+                    <div class="group-title">Action</div>
+                    @{ int baseIndex = FilteredWindows.Count; }
+                    <div class="command-item @(SelectedIndex == baseIndex ? "selected" : "")" @onclick="@(() => SelectAction(0))" @onmouseover="@(() => SelectedIndex = baseIndex)">
+                        <span class="icon">🚀</span>
+                        <span class="text">Go to <strong>@SearchQuery</strong></span>
+                    </div>
+                     <div class="command-item @(SelectedIndex == baseIndex + 1 ? "selected" : "")" @onclick="@(() => SelectAction(1))" @onmouseover="@(() => SelectedIndex = baseIndex + 1)">
+                        <span class="icon">🔍</span>
+                        <span class="text">Search Google for <strong>@SearchQuery</strong></span>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .command-palette-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(4px);
+        z-index: 9999;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding-top: 20vh;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+    }
+    
+    .command-palette-overlay.visible {
+        opacity: 1;
+        pointer-events: auto;
+    }
+    
+    .command-palette-container {
+        width: 600px;
+        max-width: 90%;
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-radius: 12px;
+        box-shadow: 0 0 20px rgba(100, 149, 237, 0.2), 0 20px 50px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transform: translateY(-20px);
+        transition: transform 0.2s ease;
+    }
+    
+    .command-palette-overlay.visible .command-palette-container {
+        transform: translateY(0);
+    }
+    
+    .command-palette-input-wrapper {
+        display: flex;
+        align-items: center;
+        padding: 16px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    
+    .search-icon {
+        width: 20px;
+        height: 20px;
+        color: #666;
+        margin-right: 12px;
+    }
+    
+    .command-palette-input {
+        flex: 1;
+        border: none;
+        background: transparent;
+        font-size: 1.1rem;
+        color: #333;
+        outline: none;
+    }
+    
+    .hints {
+        display: flex;
+        gap: 12px;
+        margin-left: 10px;
+        font-size: 0.75rem;
+        color: #888;
+    }
+    
+    .hint .sub {
+        background: rgba(0,0,0,0.06);
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-weight: 600;
+        color: #555;
+    }
+    
+    .command-palette-results {
+        max-height: 400px;
+        overflow-y: auto;
+        padding: 8px;
+    }
+    
+    .command-group {
+        margin-bottom: 8px;
+    }
+    
+    .group-title {
+        font-size: 0.75rem;
+        color: #888;
+        padding: 4px 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .command-item {
+        display: flex;
+        align-items: center;
+        padding: 10px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.1s;
+    }
+    
+    .command-item:hover, .command-item.selected {
+        background: rgba(0, 0, 0, 0.05);
+    }
+    
+    .command-item .icon {
+        margin-right: 12px;
+        font-size: 1.1rem;
+    }
+    
+    .command-item .text {
+        flex: 1;
+        font-size: 0.95rem;
+        color: #333;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .command-item .subtext {
+        font-size: 0.8rem;
+        color: #888;
+        margin-left: 10px;
+    }
+    
+    .command-item .shortcut {
+        font-size: 0.8rem;
+        color: #999;
+        background: rgba(255, 255, 255, 0.5);
+        padding: 2px 6px;
+        border-radius: 4px;
+        margin-left: 8px;
+    }
+</style>
+
+@code {
+    [Parameter] public EventCallback<string> OnNavigate { get; set; }
+    
+    private bool IsVisible = false;
+    private string SearchQuery = "";
+    private int SelectedIndex = 0;
+    private ElementReference inputElement;
+    private List<WindowInfo> OpenWindows = new();
+    private List<WindowInfo> FilteredWindows = new();
+
+    public class WindowInfo
+    {
+        public string Label { get; set; }
+        public string Title { get; set; }
+        public string Url { get; set; }
+    }
+
+    [JSInvokable]
+    public async Task Toggle()
+    {
+        IsVisible = !IsVisible;
+        if (IsVisible)
+        {
+            SearchQuery = "";
+            SelectedIndex = 0;
+            await FetchOpenWindows();
+            StateHasChanged();
+            await Task.Delay(50);
+            await inputElement.FocusAsync();
+        }
+        else
+        {
+            StateHasChanged();
+        }
+    }
+    
+    private void Close()
+    {
+        IsVisible = false;
+        StateHasChanged();
+    }
+
+    private async Task FetchOpenWindows()
+    {
+        try {
+            // Call Rust backend to get open windows
+            OpenWindows = await JsRuntime.InvokeAsync<List<WindowInfo>>("window.lumina.invoke", "get_open_windows");
+            FilterWindows();
+        } catch (Exception ex) {
+            Console.WriteLine($"Error fetching windows: {ex.Message}");
+            // Mock data for fallback/testing
+            OpenWindows = new List<WindowInfo>();
+            FilterWindows();
+        }
+    }
+
+    private void FilterWindows()
+    {
+        if (string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            FilteredWindows = OpenWindows.Take(5).ToList();
+        }
+        else
+        {
+            FilteredWindows = OpenWindows
+                .Where(w => (w.Title != null && w.Title.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase)) || 
+                            (w.Url != null && w.Url.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase)))
+                .Take(5)
+                .ToList();
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        int totalItems = FilteredWindows.Count + (string.IsNullOrWhiteSpace(SearchQuery) ? 3 : 2);
+
+        if (e.Key == "Escape")
+        {
+            Close();
+        }
+        else if (e.Key == "Enter")
+        {
+             if (e.ShiftKey)
+            {
+                // Flash Tab
+                await OpenFlashTab();
+            }
+            else
+            {
+                await ExecuteSelection(SelectedIndex);
+            }
+        }
+        else if (e.Key == "ArrowDown")
+        {
+            SelectedIndex++;
+            if (SelectedIndex >= totalItems) SelectedIndex = 0;
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            SelectedIndex--;
+            if (SelectedIndex < 0) SelectedIndex = totalItems - 1;
+        }
+        else
+        {
+            // Reset selection on typing (will be handled by bind:event="oninput" triggering setter but here we just ensure index reset)
+            // Actually, OnInput logic is separate.
+        }
+    }
+
+    private async Task ExecuteSelection(int index)
+    {
+        if (index < FilteredWindows.Count)
+        {
+            await SelectWindow(FilteredWindows[index]);
+            return;
+        }
+
+        int actionIndex = index - FilteredWindows.Count;
+        await SelectAction(actionIndex);
+    }
+
+    private async Task SelectWindow(WindowInfo window)
+    {
+        await JsRuntime.InvokeVoidAsync("window.lumina.invoke", "focus_window", new { label = window.Label });
+        Close();
+    }
+
+    private async Task SelectAction(int index)
+    {
+        string targetUrl = "";
+        
+        if (string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            if (index == 0) targetUrl = "https://google.com";
+            else if (index == 1) targetUrl = "https://lumina-home"; // Internal
+            else if (index == 2) targetUrl = "https://lumina-settings"; // Internal
+        }
+        else
+        {
+            if (index == 0) targetUrl = SearchQuery;
+            else if (index == 1) targetUrl = "https://www.google.com/search?q=" + System.Web.HttpUtility.UrlEncode(SearchQuery);
+        }
+
+        if (!string.IsNullOrEmpty(targetUrl))
+        {
+            await OnNavigate.InvokeAsync(targetUrl);
+        }
+        Close();
+    }
+
+    private async Task OpenFlashTab()
+    {
+         string targetUrl = SearchQuery;
+         if (string.IsNullOrWhiteSpace(targetUrl)) return;
+
+         // Smart URL handling (duplicate logic from Home.razor or simplified)
+         if (!Regex.IsMatch(targetUrl, @"^https?://"))
+         {
+             if (Regex.IsMatch(targetUrl, @"^[\w-]+\.[\w\.-]+$"))
+             {
+                 targetUrl = "https://" + targetUrl;
+             }
+             else
+             {
+                 targetUrl = "https://www.google.com/search?q=" + System.Web.HttpUtility.UrlEncode(targetUrl);
+             }
+         }
+         
+         await JsRuntime.InvokeVoidAsync("window.lumina.invoke", "open_flash_window", new { url = targetUrl });
+         Close();
+    }
+    
+    private string GetDomain(string url)
+    {
+        try
+        {
+            return new Uri(url).Host;
+        }
+        catch
+        {
+            return url;
+        }
+    }
+    
+    protected override void OnParametersSet()
+    {
+         FilterWindows();
+    }
+}
