@@ -1627,15 +1627,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| {
-                if event.state() == ShortcutState::Pressed  {
-                    if shortcut.matches(Modifiers::CONTROL, Code::Space) {
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+                if event.state() == ShortcutState::Pressed && shortcut.matches(Modifiers::CONTROL, Code::Space) {
+                    if let Some(window) = app.get_webview_window("main") {
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
                     }
                 }
@@ -1667,7 +1665,7 @@ pub fn run() {
                     Ok(resp) => {
                          if let Ok(text) = resp.text().await {
                              println!("Downloaded EasyList, parsing...");
-                             filter_set.add_filters(&text.lines().collect::<Vec<_>>(), adblock::lists::ParseOptions::default());
+                             filter_set.add_filters(text.lines().collect::<Vec<_>>(), adblock::lists::ParseOptions::default());
                          }
                     },
                     Err(e) => println!("Failed to fetch EasyList: {}", e),
