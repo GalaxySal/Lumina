@@ -14,6 +14,14 @@
                    @bind:event="oninput" 
                    @onkeydown="HandleKeyDown" 
                    class="command-palette-input" />
+            
+            <div class="shield-stats" title="Lumina Shield: Active Protection">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="shield-icon">
+                    <path fill-rule="evenodd" d="M12.516 2.17a.75.75 0 00-1.032 0 11.209 11.209 0 01-7.877 3.08.75.75 0 00-.722.515A12.74 12.74 0 002.25 9.75c0 5.942 4.064 10.933 9.563 12.348a.749.749 0 00.374 0c5.499-1.415 9.563-6.406 9.563-12.348 0-1.352-.272-2.636-.759-3.801a.75.75 0 00-.722-.515 11.208 11.208 0 01-7.757-3.264zM12 15.75a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5z" clip-rule="evenodd" />
+                </svg>
+                <span class="shield-count">@BlockedAdsCount</span>
+            </div>
+
             <div class="hints">
                 <span class="hint">Shift+Enter <span class="sub">Flash Tab</span></span>
                 <span class="hint">ESC <span class="sub">Close</span></span>
@@ -146,6 +154,26 @@
         margin-right: 12px;
     }
     
+    .shield-stats {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: 12px;
+        color: #3b82f6;
+        background: rgba(59, 130, 246, 0.1);
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        user-select: none;
+    }
+    
+    .shield-icon {
+        width: 16px;
+        height: 16px;
+    }
+
     .command-palette-input {
         flex: 1;
         border: none;
@@ -235,6 +263,7 @@
 
 @code {
     [Parameter] public EventCallback<string> OnNavigate { get; set; }
+    [Parameter] public uint BlockedAdsCount { get; set; } = 0;
     
     private bool IsVisible = false;
     private string SearchQuery = "";

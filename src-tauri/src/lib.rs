@@ -1,13 +1,90 @@
 mod data;
+mod history_manager;
+use history_manager::HistoryManager;
 use data::{AppDataStore, HistoryItem, FavoriteItem, AppSettings};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewBuilder, Emitter, Listener, Url};
 use futures_util::StreamExt;
 use tokio::io::{AsyncWriteExt, AsyncSeekExt};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, Arc, OnceLock};
 use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 use std::fs::OpenOptions;
+use adblock::engine::Engine;
+use adblock::lists::FilterSet;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState, Modifiers, Code};
+
+static ADBLOCK_ENGINE: OnceLock<Arc<Mutex<Engine>>> = OnceLock::new();
+static ADBLOCK_STATS: OnceLock<Arc<Mutex<HashMap<String, u32>>>> = OnceLock::new();
+
+#[derive(Clone, serde::Serialize)]
+struct AdblockStatsPayload {
+    label: String,
+    blocked_count: u32,
+}
+
+fn check_adblock_url(url: &str, referer: Option<&str>, label: &str, app: &AppHandle) -> bool {
+    // 0. Friendly Domain Policy (Bypass Adblock for Gemini/Google Critical Services)
+    if let Some(ref_str) = referer {
+         if ref_str.contains("gemini.google.com") || 
+            ref_str.contains("accounts.google.com") ||
+            ref_str.contains("google.com") ||
+            ref_str.contains("youtube.com") {
+              // println!("Lumina Adblock: Bypassing friendly domain: {}", url);
+              return false;
+         }
+    }
+
+    // 1. Check Global Adblock Engine
+    if let Some(engine_arc) = ADBLOCK_ENGINE.get() {
+        if let Ok(engine) = engine_arc.lock() {
+            let check_result = engine.check_network_request(&adblock::request::Request::new(
+                url,
+                referer.unwrap_or(""), 
+                "", // Request type (empty for now)
+            ).unwrap());
+            
+            if check_result.matched {
+                println!("Lumina Adblock: Blocked {}", url);
+                
+                // Increment stats
+                if let Some(stats_arc) = ADBLOCK_STATS.get() {
+                    if let Ok(mut stats) = stats_arc.lock() {
+                        let count = stats.entry(label.to_string()).or_insert(0);
+                        *count += 1;
+                        // Emit event to frontend
+                        let _ = app.emit("adblock-stats-update", AdblockStatsPayload {
+                            label: label.to_string(),
+                            blocked_count: *count,
+                        });
+                    }
+                }
+                
+                return true;
+            }
+        }
+    }
+
+    // 2. Fallback to HostBlock List
+    if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
+        println!("Lumina HostBlock: {}", url);
+        // Increment stats (also for host block)
+        if let Some(stats_arc) = ADBLOCK_STATS.get() {
+            if let Ok(mut stats) = stats_arc.lock() {
+                let count = stats.entry(label.to_string()).or_insert(0);
+                *count += 1;
+                let _ = app.emit("adblock-stats-update", AdblockStatsPayload {
+                    label: label.to_string(),
+                    blocked_count: *count,
+                });
+            }
+        }
+        return true;
+    }
+
+    false
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadItem {
@@ -155,14 +232,73 @@ fn refresh(app: AppHandle, label: String) {
 }
 
 #[tauri::command]
-fn add_history_item(state: tauri::State<'_, AppDataStore>, url: String, title: String) {
-    state.add_history(url, title);
+fn add_history_item(state: tauri::State<'_, AppDataStore>, history_manager: tauri::State<'_, HistoryManager>, url: String, title: String) {
+    // Legacy JSON store (optional, maybe keep for backup or remove later)
+    state.add_history(url.clone(), title.clone());
     state.save();
+
+    // SQLite Store
+    if let Err(e) = history_manager.add_visit(url, title) {
+        eprintln!("Failed to add history item: {}", e);
+    }
+}
+
+#[tauri::command]
+fn update_history_title(app: AppHandle, history_manager: tauri::State<'_, HistoryManager>, label: String, url: String, title: String) {
+    if let Err(e) = history_manager.update_title(url, title.clone()) {
+         eprintln!("Failed to update history title: {}", e);
+    }
+    // Also emit tab-updated so UI reflects the real title
+    let _ = app.emit("tab-updated", TabUpdatedPayload { label, title: Some(title), favicon: None });
+}
+
+#[tauri::command]
+fn search_history(history_manager: tauri::State<'_, HistoryManager>, data_store: tauri::State<'_, AppDataStore>, query: String) -> Vec<history_manager::HistoryItem> {
+    if query.starts_with("@b") {
+        // Search Bookmarks (Favorites)
+        let q = query.replace("@b", "").trim().to_lowercase();
+        let favorites = data_store.data.lock().unwrap().favorites.clone();
+        favorites.into_iter()
+            .filter(|f| f.url.to_lowercase().contains(&q) || f.title.to_lowercase().contains(&q))
+            .map(|f| history_manager::HistoryItem {
+                url: f.url,
+                title: f.title,
+                visit_count: 100, // Boost favorites
+                last_visit: chrono::Utc::now().timestamp(),
+            })
+            .collect()
+    } else {
+        // Search History (default or @h)
+        let q = if query.starts_with("@h") {
+            query.replace("@h", "").trim().to_string()
+        } else {
+            query
+        };
+        
+        match history_manager.search(&q) {
+            Ok(items) => items,
+            Err(e) => {
+                eprintln!("Search error: {}", e);
+                Vec::new()
+            }
+        }
+    }
 }
 
 #[tauri::command]
 fn get_history(state: tauri::State<'_, AppDataStore>) -> Vec<HistoryItem> {
     state.data.lock().unwrap().history.clone()
+}
+
+#[tauri::command]
+fn get_recent_history(history_manager: tauri::State<'_, HistoryManager>) -> Vec<history_manager::HistoryItem> {
+    match history_manager.get_recent(50) {
+        Ok(items) => items,
+        Err(e) => {
+            eprintln!("Failed to get recent history: {}", e);
+            Vec::new()
+        }
+    }
 }
 
 #[tauri::command]
@@ -559,19 +695,35 @@ async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url
     // Create Desktop Shortcut
     let _ = create_desktop_shortcut(&title, &url, icon_path);
 
+    let app_clone = app.clone();
+    let label_clone = label.clone();
+
     // Inject a small script to ensure window.close() works if needed, 
     // but primarily we rely on native decorations for controls.
     // We also ensure the window is focused.
-    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
-        .title(&title)
-        .inner_size(1024.0, 768.0)
+    let mut builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
+        .title(&title);
+
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0");
+    }
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+    }
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+    }
+
+    builder.inner_size(1024.0, 768.0)
         .decorations(true) // Enable native window controls (Close, Minimize, Maximize)
         .focused(true)
         .initialization_script(get_lumina_stealth_script())
-        .on_web_resource_request(|request, response| {
-            let url = request.uri().to_string();
-            if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
-                println!("Lumina HostBlock: {}", url);
+        .on_web_resource_request(move |request, response| {
+            let referer = request.headers().get("referer").and_then(|h| h.to_str().ok());
+            if check_adblock_url(&request.uri().to_string(), referer, &label_clone, &app_clone) {
                 *response = tauri::http::Response::builder()
                     .status(403)
                     .body(std::borrow::Cow::Owned(Vec::new()))
@@ -669,20 +821,35 @@ fn clean_page(app: AppHandle) {
 #[tauri::command]
 async fn open_flash_window(app: AppHandle, url: String) -> Result<(), String> {
     let label = format!("flash-{}", chrono::Utc::now().timestamp_micros());
+    let app_handle = app.clone();
+    let label_clone = label.clone();
     
-    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
-        .title("Flash Tab")
-        .inner_size(800.0, 600.0)
+    let mut builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
+        .title("Flash Tab");
+
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0");
+    }
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+    }
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+    }
+
+    builder.inner_size(800.0, 600.0)
         .decorations(false)
         .always_on_top(true)
         .center()
         .focused(true)
         .skip_taskbar(true)
         .initialization_script(get_lumina_stealth_script())
-        .on_web_resource_request(|request, response| {
-            let url = request.uri().to_string();
-            if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
-                println!("Lumina HostBlock: {}", url);
+        .on_web_resource_request(move |request, response| {
+            let referer = request.headers().get("referer").and_then(|h| h.to_str().ok());
+            if check_adblock_url(&request.uri().to_string(), referer, &label_clone, &app_handle) {
                 *response = tauri::http::Response::builder()
                     .status(403)
                     .body(std::borrow::Cow::Owned(Vec::new()))
@@ -699,53 +866,58 @@ fn get_lumina_stealth_script() -> String {
     (function() {
         console.log("Lumina Stealth Protocol: Activated");
 
-        // 1. CSS Injection for Ad Blocking
-        const style = document.createElement('style');
-        style.textContent = `
-            /* Core Ad Patterns */
-            iframe[src*="ads"], iframe[id*="google_ads"], iframe[src*="doubleclick"], 
-            iframe[src*="amazon-adsystem"], iframe[src*="adnxs"],
+        const host = window.location.hostname;
+        const isFriendly = host.includes('google.com') || host.includes('gemini') || host.includes('youtube.com');
+
+        if (!isFriendly) {
+            // 1. CSS Injection for Ad Blocking (Skipped on Friendly Domains)
+            const style = document.createElement('style');
+            style.textContent = `
+                /* Core Ad Patterns */
+                iframe[src*="ads"], iframe[id*="google_ads"], iframe[src*="doubleclick"], 
+                iframe[src*="amazon-adsystem"], iframe[src*="adnxs"],
+                
+                /* Common Ad Containers */
+                div[class*="ad-"], div[id*="ad-"],
+                div[class*="ads-"], div[id*="ads-"],
+                div[class*="sponsor"], div[id*="sponsor"],
+                div[class*="banner"], div[id*="banner"],
+                
+                /* Google & Networks */
+                ins.adsbygoogle, div[id^="google_ads_"],
+                
+                /* Native Ad Widgets */
+                div[id*="taboola"], div[class*="taboola"],
+                div[id*="outbrain"], div[class*="outbrain"],
+                
+                /* Overlays & Popups */
+                div[class*="popup"][class*="ad"], div[class*="modal"][class*="ad"],
+                div[id*="popup"][id*="ad"], div[id*="modal"][id*="ad"],
+                
+                /* Video Ads */
+                div[class*="video-ad"], .ad-showing
+                
+                { display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important; pointer-events: none !important; overflow: hidden !important; }
+            `;
             
-            /* Common Ad Containers */
-            div[class*="ad-"], div[id*="ad-"],
-            div[class*="ads-"], div[id*="ads-"],
-            div[class*="sponsor"], div[id*="sponsor"],
-            div[class*="banner"], div[id*="banner"],
+            function injectCSS() {
+                const head = document.head || document.documentElement;
+                if (head) head.appendChild(style);
+            }
             
-            /* Google & Networks */
-            ins.adsbygoogle, div[id^="google_ads_"],
-            
-            /* Native Ad Widgets */
-            div[id*="taboola"], div[class*="taboola"],
-            div[id*="outbrain"], div[class*="outbrain"],
-            
-            /* Overlays & Popups */
-            div[class*="popup"][class*="ad"], div[class*="modal"][class*="ad"],
-            div[id*="popup"][id*="ad"], div[id*="modal"][id*="ad"],
-            
-            /* Video Ads */
-            div[class*="video-ad"], .ad-showing
-            
-            { display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important; pointer-events: none !important; overflow: hidden !important; }
-        `;
-        
-        function injectCSS() {
-            const head = document.head || document.documentElement;
-            if (head) head.appendChild(style);
-        }
-        
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', injectCSS);
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', injectCSS);
+            } else {
+                injectCSS();
+            }
         } else {
-            injectCSS();
+            console.log("Lumina Stealth: Friendly domain detected (" + host + "), skipping CSS injection.");
         }
 
         // 2. Global Ad-Intervention (Overlay Remover)
         function killAdOverlays() {
             // Lumina Friendly Exception: Skip aggressive removal on Google and Gemini
-            const host = window.location.hostname;
-            if (host.includes('google.com') || host.includes('gemini') || host.includes('youtube.com')) {
-                console.log("Lumina Stealth: Friendly domain detected (" + host + "), skipping aggressive overlay removal.");
+            if (isFriendly) {
                 return;
             }
 
@@ -766,8 +938,8 @@ fn get_lumina_stealth_script() -> String {
                 const hasKeyword = keywords.some(k => id.includes(k) || cls.includes(k));
                 
                 if (isFloating && isHighZ && hasKeyword) {
-                     console.log("Lumina Ad-Intervention: Killing overlay ->", el);
-                     el.remove();
+                        console.log("Lumina Ad-Intervention: Killing overlay ->", el);
+                        el.remove();
                 }
                 
                 // Also kill iframes that are likely ads but missed by CSS
@@ -837,7 +1009,13 @@ fn create_desktop_shortcut(_name: &str, _url: &str, _icon_path: Option<std::path
 
 
 #[tauri::command]
-fn update_tab_info(app: AppHandle, label: String, title: Option<String>, favicon: Option<String>) {
+fn update_tab_info(app: AppHandle, history_manager: tauri::State<'_, HistoryManager>, label: String, title: Option<String>, favicon: Option<String>, url: Option<String>) {
+    // If URL and Title are present, update history title (but don't increment visit count)
+    if let (Some(u), Some(t)) = (&url, &title) {
+         if !u.starts_with("tauri://") && !u.starts_with("about:") {
+             let _ = history_manager.update_title(u.clone(), t.clone());
+         }
+    }
     let _ = app.emit("tab-updated", TabUpdatedPayload { label, title, favicon });
 }
 
@@ -1050,13 +1228,23 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
                 return link ? link.href : "";
             }}
 
+            function logVisit() {{
+                if (window.location.protocol.startsWith('http')) {{
+                     invoke('add_history_item', {{
+                         url: window.location.href,
+                         title: document.title || window.location.href
+                     }});
+                }}
+            }}
+
             function updateInfo() {{
                  let title = document.title;
                  let favicon = getFavicon();
                  invoke('update_tab_info', {{
                      label: window.__TAB_LABEL__,
                      title: title,
-                     favicon: favicon
+                     favicon: favicon,
+                     url: window.location.href
                  }});
             }}
             
@@ -1081,9 +1269,10 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
             // Initial call
             if (document.readyState === 'complete' || document.readyState === 'interactive') {{
                 updateInfo();
+                logVisit();
             }} else {{
                 window.addEventListener('DOMContentLoaded', updateInfo);
-                window.addEventListener('load', updateInfo);
+                window.addEventListener('load', () => {{ updateInfo(); logVisit(); }});
             }}
         }})();
     "#, label_clone, invoke_key);
@@ -1095,13 +1284,29 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
         Err(e) => return Err(format!("Invalid URL: {}", e)),
     };
 
-    let builder = WebviewBuilder::new(&label, WebviewUrl::External(url_parsed))
-        .initialization_script(&full_script)
-        .on_web_resource_request(|request, response| {
+    let app_clone_adblock = app.clone();
+    let label_clone_adblock = label.clone();
+
+    let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(url_parsed));
+
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0");
+    }
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+    }
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+    }
+
+    builder = builder.initialization_script(&full_script)
+        .on_web_resource_request(move |request, response| {
              // Lumina Stealth: Rust-side Ad/Tracker Blocking
-             let url = request.uri().to_string();
-             if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
-                   println!("Lumina Stealth blocked: {}", url);
+             let referer = request.headers().get("referer").and_then(|h| h.to_str().ok());
+             if check_adblock_url(&request.uri().to_string(), referer, &label_clone_adblock, &app_clone_adblock) {
                    *response = tauri::http::Response::builder()
                     .status(403)
                     .body(std::borrow::Cow::Owned(Vec::new()))
@@ -1420,8 +1625,59 @@ async fn check_pwa_manifest(app: AppHandle, label: String, url: String) -> Resul
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| {
+                if event.state() == ShortcutState::Pressed  {
+                    if shortcut.matches(Modifiers::CONTROL, Code::Space) {
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                }
+            }).build()
+        )
         .manage(UiState { sidebar_open: std::sync::atomic::AtomicBool::new(false) })
         .setup(|app| {
+            // Register Global Shortcut
+            #[cfg(desktop)]
+            {
+                app.handle().global_shortcut().register("Ctrl+Space")?;
+            }
+
+            // Initialize Adblock Engine
+            tauri::async_runtime::spawn(async move {
+                println!("Initializing Adblock Engine...");
+                let mut filter_set = FilterSet::new(true);
+                
+                // Fallback/Basic Rules
+                let basic_rules = vec![
+                    "||doubleclick.net^", "||googlesyndication.com^", "||adnxs.com^",
+                    "||taboola.com^", "||outbrain.com^", "||adservice.google.com^",
+                    "/ads.js", "/ad-", "-ad-"
+                ];
+                filter_set.add_filters(&basic_rules, adblock::lists::ParseOptions::default());
+
+                // Fetch EasyList
+                match reqwest::get("https://easylist.to/easylist/easylist.txt").await {
+                    Ok(resp) => {
+                         if let Ok(text) = resp.text().await {
+                             println!("Downloaded EasyList, parsing...");
+                             filter_set.add_filters(&text.lines().collect::<Vec<_>>(), adblock::lists::ParseOptions::default());
+                         }
+                    },
+                    Err(e) => println!("Failed to fetch EasyList: {}", e),
+                }
+
+                let engine = Engine::from_filter_set(filter_set, true);
+                let _ = ADBLOCK_ENGINE.set(Arc::new(Mutex::new(engine)));
+                println!("Adblock Engine Ready.");
+            });
+
             // Check for PWA args
             let args: Vec<String> = std::env::args().collect();
             let mut pwa_url = None;
@@ -1434,16 +1690,31 @@ pub fn run() {
             if let Some(url) = pwa_url {
                  let label = format!("pwa-{}", chrono::Utc::now().timestamp_micros());
                  if let Ok(parsed_url) = url.parse() {
-                     let _ = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(parsed_url))
-                        .title("PWA")
-                        .inner_size(1024.0, 768.0)
+                     let app_handle = app.handle().clone();
+                     let label_clone = label.clone();
+                     let mut builder = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(parsed_url))
+                        .title("PWA");
+
+                     #[cfg(target_os = "windows")]
+                     {
+                         builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0");
+                     }
+                     #[cfg(target_os = "linux")]
+                     {
+                         builder = builder.user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+                     }
+                     #[cfg(target_os = "macos")]
+                     {
+                         builder = builder.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+                     }
+
+                     let _ = builder.inner_size(1024.0, 768.0)
                         .decorations(true)
                         .focused(true)
                         .initialization_script(get_lumina_stealth_script())
-                        .on_web_resource_request(|request, response| {
-                            let url = request.uri().to_string();
-                            if BLOCKED_DOMAINS.iter().any(|d| url.contains(d)) {
-                                println!("Lumina HostBlock: {}", url);
+                        .on_web_resource_request(move |request, response| {
+                            let referer = request.headers().get("referer").and_then(|h| h.to_str().ok());
+                            if check_adblock_url(&request.uri().to_string(), referer, &label_clone, &app_handle) {
                                 *response = tauri::http::Response::builder()
                                     .status(403)
                                     .body(std::borrow::Cow::Owned(Vec::new()))
@@ -1462,7 +1733,8 @@ pub fn run() {
                 let _ = std::fs::create_dir_all(&app_dir);
             }
             app.manage(AppDataStore::new(app_dir.clone()));
-            app.manage(DownloadManager::new(app_dir));
+            app.manage(DownloadManager::new(app_dir.clone()));
+            app.manage(HistoryManager::new(app_dir));
 
             // Tray Setup
             let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
@@ -1555,6 +1827,9 @@ pub fn run() {
             update_tab_info, 
             add_history_item, 
             get_history, 
+            get_recent_history,
+            update_history_title,
+            search_history,
             add_favorite, 
             remove_favorite, 
             get_favorites, 

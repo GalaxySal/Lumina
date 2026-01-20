@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
@@ -38,6 +40,54 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0" --locked
 
+      - name: Generate Release Notes
+        shell: bash
+        run: |
+          # Fetch tags
+          git fetch --tags
+          
+          # Get latest existing tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No tags found. Generating notes from the beginning."
+            GIT_LOG=$(git log --pretty=format:"%s")
+          else
+            echo "Generating notes since tag: $LATEST_TAG"
+            GIT_LOG=$(git log --pretty=format:"%s" "$LATEST_TAG..HEAD")
+          fi
+          
+          FEATURES=""
+          FIXES=""
+          CHORES=""
+          OTHERS=""
+          
+          while IFS= read -r line; do
+            if [[ $line =~ ^feat ]]; then
+              FEATURES+="- ${line#*: }\n"
+            elif [[ $line =~ ^fix ]]; then
+              FIXES+="- ${line#*: }\n"
+            elif [[ $line =~ ^chore ]]; then
+              CHORES+="- ${line#*: }\n"
+            elif [ -n "$line" ]; then
+              OTHERS+="- $line\n"
+            fi
+          done <<< "$GIT_LOG"
+          
+          BODY=""
+          if [ -n "$FEATURES" ]; then BODY+="## 🚀 Features\n$FEATURES\n"; fi
+          if [ -n "$FIXES" ]; then BODY+="## 🐛 Fixes\n$FIXES\n"; fi
+          if [ -n "$CHORES" ]; then BODY+="## 🔧 Chores & Improvements\n$CHORES\n"; fi
+          if [ -n "$OTHERS" ]; then BODY+="## 📋 Other Changes\n$OTHERS\n"; fi
+          
+          if [ -z "$BODY" ]; then
+            BODY="No significant changes detected."
+          fi
+
+          echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
+          echo -e "$BODY" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -45,6 +95,6 @@ jobs:
         with:
           tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
           releaseName: 'Lumina v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
+          releaseBody: ${{ env.RELEASE_NOTES }}
           releaseDraft: false
           prerelease: false

@@ -5,7 +5,7 @@
 @using tauri_browser.Components
 
 <div class="browser-container @(Settings.VerticalTabs ? "vertical-mode" : "")" style="@ThemeStyle">
-    <CommandPalette OnNavigate="HandleCommandPaletteNavigate" />
+    <CommandPalette OnNavigate="HandleCommandPaletteNavigate" BlockedAdsCount="@ActiveTabBlockedCount" />
     <!-- Tab Bar -->
     <div class="tab-bar">
         <div class="tabs-scroll-area">
@@ -63,7 +63,26 @@
                       <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                     </svg>
                 </button>
-                <input class="url-input" @bind="CurrentUrl" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Enter URL or search..." />
+                <div style="flex: 1; position: relative;">
+                    <input class="url-input" value="@CurrentUrl" @oninput="HandleInput" @onkeyup="HandleKeyUp" placeholder="Enter URL or search..." style="width: 100%;" />
+                    @if (ShowSuggestions)
+                    {
+                        <div class="suggestions-dropdown">
+                            @foreach (var item in Suggestions)
+                            {
+                                <div class="suggestion-item" @onclick="() => SelectSuggestion(item)">
+                                    <span class="suggestion-icon">
+                                        @if (item.VisitCount == 100) { <span>⭐</span> } else { <span>🕒</span> }
+                                    </span>
+                                    <div class="suggestion-text">
+                                        <div class="suggestion-title">@item.Title</div>
+                                        <div class="suggestion-url">@item.Url</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
                 <button class="icon-btn" @onclick="InstallPwa" title="Uygulamayı Yükle" disabled="@IsInstallingPwa" style="@(IsPwaAvailable ? "margin-right: 4px;" : "display: none")">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -394,6 +413,57 @@
     
     .tab-icon, .tab-icon-default { width: 16px; height: 16px; margin-right: 8px; border-radius: 2px; flex-shrink: 0; }
     .tab-icon-default { opacity: 0.5; }
+
+    /* Suggestions Dropdown */
+    .suggestions-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--bg-color, #fff);
+        border: 1px solid var(--border-color, #ccc);
+        border-radius: 4px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        z-index: 1000;
+        max-height: 300px;
+        overflow-y: auto;
+        margin-top: 4px;
+        color: var(--text-color, #333);
+    }
+    .suggestion-item {
+        display: flex;
+        align-items: center;
+        padding: 8px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid var(--border-color, #eee);
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:hover {
+        background-color: var(--hover-color, #f5f5f5);
+    }
+    .suggestion-icon {
+        margin-right: 10px;
+        font-size: 1.2em;
+        opacity: 0.7;
+    }
+    .suggestion-text {
+        flex: 1;
+        overflow: hidden;
+    }
+    .suggestion-title {
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 14px;
+    }
+    .suggestion-url {
+        font-size: 12px;
+        color: #888;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
 </style>
 
 @code {
@@ -404,10 +474,12 @@
         public string Url { get; set; } = "https://tauri.app";
         public string FaviconUrl { get; set; } = string.Empty;
         public bool IsPwaAvailable { get; set; } = false;
+        public uint BlockedAdsCount { get; set; } = 0;
     }
 
     private List<BrowserTab> Tabs = new();
     private string ActiveTabId = string.Empty;
+    private uint ActiveTabBlockedCount => Tabs.FirstOrDefault(t => t.Id == ActiveTabId)?.BlockedAdsCount ?? 0;
     private string CurrentUrl { get; set; } = string.Empty;
     private bool IsPwaAvailable { get; set; } = false;
     private string CurrentPwaTabId { get; set; } = string.Empty;
@@ -422,8 +494,49 @@
     private List<FavoriteItem> FavoritesList = new();
     private List<DownloadItem> DownloadsList = new();
 
-    private class HistoryItem { public string Url { get; set; } = string.Empty; public string Title { get; set; } = string.Empty; }
+    private class HistoryItem 
+    { 
+        public string Url { get; set; } = string.Empty; 
+        public string Title { get; set; } = string.Empty; 
+        [JsonPropertyName("visit_count")]
+        public long VisitCount { get; set; }
+        [JsonPropertyName("last_visit")]
+        public long LastVisit { get; set; }
+    }
     private class FavoriteItem { public string Url { get; set; } = string.Empty; public string Title { get; set; } = string.Empty; }
+    
+    // Suggestions
+    private List<HistoryItem> Suggestions = new();
+    private bool ShowSuggestions => Suggestions.Any() && !string.IsNullOrWhiteSpace(CurrentUrl);
+
+    private async Task HandleInput(ChangeEventArgs e)
+    {
+        CurrentUrl = e.Value?.ToString() ?? string.Empty;
+        
+        if (string.IsNullOrWhiteSpace(CurrentUrl))
+        {
+            Suggestions.Clear();
+        }
+        else
+        {
+            try
+            {
+                Suggestions = await JsRuntime.InvokeAsync<List<HistoryItem>>("__TAURI__.core.invoke", "search_history", new { query = CurrentUrl });
+            }
+            catch (Exception ex)
+            {
+                // Console.WriteLine($"Error fetching suggestions: {ex.Message}");
+                Suggestions.Clear();
+            }
+        }
+    }
+
+    private async Task SelectSuggestion(HistoryItem item)
+    {
+        CurrentUrl = item.Url;
+        Suggestions.Clear();
+        await Navigate();
+    }
     
     public class DownloadItem
     {
@@ -490,6 +603,15 @@
         
         [JsonPropertyName("favicon")]
         public string? Favicon { get; set; }
+    }
+
+    public class AdblockStatsPayload
+    {
+        [JsonPropertyName("label")]
+        public string Label { get; set; } = string.Empty;
+        
+        [JsonPropertyName("blocked_count")]
+        public uint BlockedCount { get; set; }
     }
     
     public class AppSettings
@@ -643,6 +765,21 @@
             {
                 IsPwaAvailable = true;
                 CurrentPwaTabId = label;
+                StateHasChanged();
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void OnAdblockStatsUpdate(AdblockStatsPayload payload)
+    {
+        var tab = Tabs.FirstOrDefault(t => t.Id == payload.Label);
+        if (tab != null)
+        {
+            tab.BlockedAdsCount = payload.BlockedCount;
+            // Only update UI if this is the active tab
+            if (ActiveTabId == payload.Label)
+            {
                 StateHasChanged();
             }
         }

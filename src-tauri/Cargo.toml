@@ -1,6 +1,6 @@
 [package]
 name = "lumina-browser"
-version = "0.2.0"
+version = "0.2.2"
 description = "A next-generation browser built with Tauri and Blazor"
 authors = ["Nazim"]
 edition = "2021"
@@ -29,5 +29,7 @@ tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
 url = "2.5.8"
 image = "0.24"
-adblock = "0.12.1"
+adblock = { version = "0.12.1", default-features = false, features = ["full-regex-handling", "embedded-domain-resolver"] }
+tauri-plugin-global-shortcut = "2.3.1"
+rusqlite = { version = "0.38.0", features = ["bundled"] }
 

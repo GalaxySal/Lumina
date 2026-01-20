@@ -16,13 +16,6 @@
         window.setupTabNavigationListener = async (dotNetRef) => {
             // Global keyboard shortcuts
             window.addEventListener('keydown', (e) => {
-                // Alt + Space for Command Palette
-                if (e.altKey && e.code === 'Space') {
-                    e.preventDefault();
-                    if (window.commandPaletteRef) {
-                        window.commandPaletteRef.invokeMethodAsync('Toggle');
-                    }
-                }
                 // Ctrl + L for Address Bar
                 if (e.ctrlKey && e.code === 'KeyL') {
                     e.preventDefault();
@@ -80,6 +73,11 @@
                 await window.__TAURI__.event.listen('pwa-can-install', (event) => {
                     console.log("PWA detected:", event);
                     dotNetRef.invokeMethodAsync('OnPwaDetected', event.payload.label);
+                });
+
+                await window.__TAURI__.event.listen('adblock-stats-update', (event) => {
+                    // console.log("Adblock stats:", event);
+                    dotNetRef.invokeMethodAsync('OnAdblockStatsUpdate', event.payload);
                 });
             } else {
                 console.warn("Tauri event API not found");
