@@ -534,60 +534,79 @@ struct TabClosedPayload {
 #[serde(rename_all = "camelCase")]
 struct TabPwaPayload {
     label: String,
+    icon_url: Option<String>,
+}
+
+struct PwaState {
+    icons: std::sync::Mutex<std::collections::HashMap<String, String>>,
 }
 
 #[tauri::command]
-async fn pwa_detected(app: AppHandle, label: String) -> Result<(), String> {
-    app.emit("pwa-can-install", TabPwaPayload { label }).map_err(|e| e.to_string())
+async fn pwa_detected(app: AppHandle, state: tauri::State<'_, PwaState>, label: String, icon_url: Option<String>) -> Result<(), String> {
+    if let Some(url) = &icon_url {
+        state.icons.lock().unwrap().insert(label.clone(), url.clone());
+    }
+    app.emit("pwa-can-install", TabPwaPayload { label, icon_url }).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn install_pwa(app: AppHandle, label: String) -> Result<(), String> {
+async fn install_pwa(app: AppHandle, state: tauri::State<'_, PwaState>, label: String) -> Result<(), String> {
+    // Get stored icon URL if available
+    let icon_url = state.icons.lock().unwrap().get(&label).cloned();
+    let icon_url_js = if let Some(u) = icon_url {
+        format!("'{}'", u)
+    } else {
+        "null".to_string()
+    };
+
     if let Some(webview) = app.get_webview(&label) {
-        let script = r#"
-            (async function() {
-                if (window.deferredPrompt) {
+        let script = format!(r#"
+            (async function() {{
+                var knownIconUrl = {};
+                if (window.deferredPrompt) {{
                     console.log("Triggering PWA install prompt...");
                     window.deferredPrompt.prompt();
-                    window.deferredPrompt.userChoice.then((choiceResult) => {
-                        if (choiceResult.outcome === 'accepted') {
+                    window.deferredPrompt.userChoice.then((choiceResult) => {{
+                        if (choiceResult.outcome === 'accepted') {{
                             console.log('User accepted the install prompt');
-                        } else {
+                        }} else {{
                             console.log('User dismissed the install prompt');
-                        }
+                        }}
                         window.deferredPrompt = null;
-                    });
-                } else {
+                    }});
+                }} else {{
                     console.warn("No deferredPrompt found, falling back to manual PWA window...");
                     var title = document.title || window.location.href;
                     
-                    var faviconUrl = null;
-                    var links = document.querySelectorAll("link[rel*='icon']");
-                    if (links.length > 0) {
-                        faviconUrl = links[0].href;
-                    }
+                    var faviconUrl = knownIconUrl;
+                    if (!faviconUrl) {{
+                        var links = document.querySelectorAll("link[rel*='icon']");
+                        if (links.length > 0) {{
+                            faviconUrl = links[0].href;
+                        }}
+                    }}
 
-                    try {
-                        var args = { url: window.location.href, title: title, faviconUrl: faviconUrl };
-                        if (window.__TAURI__ && window.__TAURI__.core) {
+                    try {{
+                        var args = {{ url: window.location.href, title: title, faviconUrl: faviconUrl }};
+                        if (window.__TAURI__ && window.__TAURI__.core) {{
                             await window.__TAURI__.core.invoke('open_pwa_window', args);
-                        } else if (window.__TAURI__ && window.__TAURI__.invoke) {
+                        }} else if (window.__TAURI__ && window.__TAURI__.invoke) {{
                             await window.__TAURI__.invoke('open_pwa_window', args);
-                        } else {
+                        }} else {{
                              // Fallback to our custom invoke
-                             if (typeof invoke === 'function') {
+                             if (typeof invoke === 'function') {{
                                  invoke('open_pwa_window', args);
-                             } else {
+                             }} else {{
                                  console.error("No invoke mechanism found");
-                             }
-                        }
-                    } catch(e) {
+                             }}
+                        }}
+                    }} catch(e) {{
                         console.error("Failed to open PWA window:", e);
-                    }
-                }
-            })();
-        "#;
-        webview.eval(script).map_err(|e| e.to_string())?;
+                    }}
+                }}
+            }})();
+        "#, icon_url_js);
+        webview.eval(&script).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -692,6 +711,8 @@ async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url
         None
     };
 
+    let icon_path_clone = icon_path.clone();
+
     // Create Desktop Shortcut
     let _ = create_desktop_shortcut(&title, &url, icon_path);
 
@@ -703,6 +724,19 @@ async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url
     // We also ensure the window is focused.
     let mut builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
         .title(&title);
+
+    if let Some(path) = icon_path_clone {
+        if let Ok(img) = image::open(&path) {
+             let rgba = img.to_rgba8();
+             let (width, height) = rgba.dimensions();
+             let rgba_vec = rgba.into_raw();
+             let tauri_img = tauri::image::Image::new_owned(rgba_vec, width, height);
+             match builder.icon(tauri_img) {
+                 Ok(b) => builder = b,
+                 Err(e) => return Err(format!("Failed to set window icon: {}", e)),
+             }
+        }
+    }
 
     #[cfg(target_os = "windows")]
     {
@@ -1207,12 +1241,61 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
             
             // Manual PWA Detection (Fallback)
             // Checks for manifest with display: standalone/minimal-ui
-            function checkManifest() {{
+            async function checkManifest() {{
                 if (window.deferredPrompt) return; // Already detected
                 
                 var link = document.querySelector("link[rel='manifest']");
                 if (link && link.href) {{
-                    // Send to Rust to check (bypasses CSP and CORS)
+                    // Try to fetch in browser first (shares session/cookies, bypasses Cloudflare)
+                    try {{
+                        console.log("Fetching PWA manifest via JS: " + link.href);
+                        let response = await fetch(link.href);
+                        if (response.ok) {{
+                            let manifest = await response.json();
+                            console.log("JS Manifest parsed:", manifest);
+                            if (manifest.display && ['standalone', 'minimal-ui', 'fullscreen'].includes(manifest.display)) {{
+                                console.log("PWA detected via JS fetch!");
+                                
+                                // Extract best icon
+                                let iconUrl = null;
+                                if (manifest.icons && Array.isArray(manifest.icons)) {{
+                                    let maxArea = 0;
+                                    for (let icon of manifest.icons) {{
+                                        if (icon.src && icon.sizes) {{
+                                            let sizes = icon.sizes.split(' ');
+                                            for (let size of sizes) {{
+                                                if (size === 'any') continue;
+                                                let parts = size.split('x');
+                                                if (parts.length === 2) {{
+                                                    let w = parseInt(parts[0]);
+                                                    let h = parseInt(parts[1]);
+                                                    if (!isNaN(w) && !isNaN(h) && w * h > maxArea) {{
+                                                        maxArea = w * h;
+                                                        iconUrl = icon.src;
+                                                    }}
+                                                }}
+                                            }}
+                                        }} else if (icon.src && !iconUrl) {{
+                                            // Fallback if no sizes
+                                            iconUrl = icon.src;
+                                        }}
+                                    }}
+                                    
+                                    // Resolve relative URL
+                                    if (iconUrl) {{
+                                        iconUrl = new URL(iconUrl, link.href).href;
+                                    }}
+                                }}
+
+                                invoke('pwa_detected', {{ label: window.__TAB_LABEL__, iconUrl: iconUrl }});
+                                return;
+                            }}
+                        }}
+                    }} catch(e) {{
+                        console.error("Browser fetch failed, falling back to Rust:", e);
+                    }}
+
+                    // Fallback to Rust (bypasses CORS/CSP if browser fetch failed)
                     invoke('check_pwa_manifest', {{ label: window.__TAB_LABEL__, url: link.href }});
                 }}
             }}
@@ -1603,17 +1686,81 @@ async fn resume_download(app: AppHandle, url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn check_pwa_manifest(app: AppHandle, label: String, url: String) -> Result<(), String> {
+async fn check_pwa_manifest(app: AppHandle, state: tauri::State<'_, PwaState>, label: String, url: String) -> Result<(), String> {
     println!("Checking PWA manifest for {}: {}", label, url);
-    match reqwest::get(&url).await {
+    let client = reqwest::Client::new();
+    match client.get(&url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0")
+        .send()
+        .await 
+    {
         Ok(res) => {
-            if let Ok(manifest) = res.json::<serde_json::Value>().await {
+            let status = res.status();
+            println!("Manifest fetch status: {}", status);
+            
+            let text = res.text().await.unwrap_or_default();
+            // println!("Manifest raw content: {}", text); // Uncomment for full debug if needed
+
+            if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&text) {
+                 println!("PWA Manifest fetched for {}: {:?}", label, manifest);
                  if let Some(display) = manifest.get("display").and_then(|v: &serde_json::Value| v.as_str()) {
+                     println!("PWA Manifest display mode: {}", display);
                      if display == "standalone" || display == "minimal-ui" || display == "fullscreen" {
                          println!("PWA Manifest confirmed via Rust for {}", label);
-                         let _ = app.emit("pwa-can-install", TabPwaPayload { label });
+                         
+                         // Find best icon
+                         let mut best_icon_url = None;
+                         let mut max_area = 0;
+                         if let Some(icons) = manifest.get("icons").and_then(|v| v.as_array()) {
+                             for icon in icons {
+                                 if let Some(src) = icon.get("src").and_then(|v| v.as_str()) {
+                                     if let Some(sizes) = icon.get("sizes").and_then(|v| v.as_str()) {
+                                         for size in sizes.split_whitespace() {
+                                             if size == "any" { continue; }
+                                             if let Some((w, h)) = size.split_once('x') {
+                                                 if let (Ok(w), Ok(h)) = (w.parse::<i32>(), h.parse::<i32>()) {
+                                                     if w * h > max_area {
+                                                         max_area = w * h;
+                                                         best_icon_url = Some(src.to_string());
+                                                     }
+                                                 }
+                                             }
+                                         }
+                                     }
+                                     // Fallback if no sizes and we haven't found a better one yet
+                                     if best_icon_url.is_none() {
+                                         best_icon_url = Some(src.to_string());
+                                     }
+                                 }
+                             }
+                         }
+                         
+                         // Resolve relative URL
+                         let final_icon_url = if let Some(u) = best_icon_url {
+                             if let Ok(base) = url::Url::parse(&url) {
+                                 if let Ok(joined) = base.join(&u) {
+                                     Some(joined.to_string())
+                                 } else {
+                                     Some(u)
+                                 }
+                             } else {
+                                 Some(u)
+                             }
+                         } else {
+                             None
+                         };
+
+                         if let Some(u) = &final_icon_url {
+                              state.icons.lock().unwrap().insert(label.clone(), u.clone());
+                         }
+
+                         let _ = app.emit("pwa-can-install", TabPwaPayload { label, icon_url: final_icon_url });
                      }
+                 } else {
+                     println!("PWA Manifest missing 'display' field or invalid.");
                  }
+            } else {
+                println!("Failed to parse PWA manifest JSON. Raw content start: {:.200}", text);
             }
         }
         Err(e) => println!("Failed to fetch manifest: {}", e),
@@ -1640,6 +1787,7 @@ pub fn run() {
             }).build()
         )
         .manage(UiState { sidebar_open: std::sync::atomic::AtomicBool::new(false) })
+        .manage(PwaState { icons: std::sync::Mutex::new(std::collections::HashMap::new()) })
         .setup(|app| {
             // Register Global Shortcut
             #[cfg(desktop)]
