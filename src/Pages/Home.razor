@@ -288,183 +288,7 @@
     }
 </div>
 
-<style>
-    :root {
-        --bg-color: #2b2b2b;
-        --header-bg: #111111;
-        --toolbar-bg: #2b2b2b;
-        --text-color: #e0e0e0;
-        --accent-color: #3b82f6;
-        --border-radius: 12px;
-        --toolbar-height: 48px;
-        --tab-bar-height: 42px;
-        --sidebar-width: 240px;
-    }
 
-    body { margin: 0; padding: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--header-bg); color: var(--text-color); }
-    
-    .browser-container { display: flex; flex-direction: column; height: 100vh; transition: background-color 0.3s, color 0.3s; background-color: var(--header-bg); }
-    
-    .content-area { display: flex; flex-direction: column; flex: 1; width: 100%; position: relative; background-color: var(--bg-color); }
-
-    /* Tab Bar */
-    .tab-bar { display: flex; align-items: flex-end; background: var(--header-bg); height: var(--tab-bar-height); padding: 0 8px; overflow-x: auto; flex-shrink: 0; gap: 4px; }
-    .tabs-scroll-area { display: flex; flex: 1; overflow-x: auto; scrollbar-width: none; align-items: flex-end; height: 100%; }
-    .tabs-scroll-area::-webkit-scrollbar { display: none; }
-    
-    .tab { 
-        padding: 0 16px; 
-        margin-right: -2px; 
-        height: 34px;
-        background: transparent; 
-        border-radius: 10px 10px 0 0; 
-        cursor: pointer; 
-        display: flex; 
-        align-items: center; 
-        min-width: 120px; 
-        max-width: 220px; 
-        font-size: 13px; 
-        user-select: none; 
-        transition: background 0.1s, color 0.1s; 
-        white-space: nowrap; 
-        color: var(--tab-text-color);
-        position: relative;
-        border: 1px solid transparent;
-        border-bottom: none;
-    }
-    
-    .tab.active { 
-        background: var(--toolbar-bg); 
-        color: var(--text-color); 
-        font-weight: 500; 
-        z-index: 10;
-        height: 38px; /* Slightly taller to connect with toolbar */
-        margin-bottom: 0;
-        box-shadow: 0 -1px 4px rgba(0,0,0,0.1);
-    }
-    
-    .tab:hover:not(.active) { background: var(--tab-hover-bg); color: var(--text-color); }
-    
-    .tab-title { flex: 1; overflow: hidden; text-overflow: ellipsis; margin-right: 8px; }
-    .tab-close { opacity: 0; font-size: 12px; border-radius: 50%; padding: 4px; display: flex; align-items: center; justify-content: center; }
-    .tab:hover .tab-close { opacity: 0.7; }
-    .tab-close:hover { opacity: 1; background: rgba(255,255,255,0.2); }
-
-    .new-tab-btn { background: none; border: none; color: var(--text-color); width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0.7; margin-left: 4px; margin-bottom: 4px; }
-    .new-tab-btn:hover { opacity: 1; background: var(--btn-hover-bg); }
-
-    /* Vertical Mode Styles */
-    .vertical-mode { flex-direction: row; }
-    .vertical-mode .tab-bar { flex-direction: column; width: var(--sidebar-width); height: 100%; padding: 8px; align-items: stretch; border-right: 1px solid rgba(255,255,255,0.1); background: var(--header-bg); }
-    .vertical-mode .tabs-scroll-area { flex-direction: column; overflow-y: auto; overflow-x: hidden; height: auto; }
-    .vertical-mode .tab { margin: 4px 0; border-radius: 6px; height: 36px; width: auto; max-width: none; border: none; }
-    .vertical-mode .tab.active { background: rgba(255,255,255,0.1); height: 36px; box-shadow: none; }
-    .vertical-mode .new-tab-btn { margin: 8px auto; border-radius: 6px; width: 100%; height: 36px; }
-
-    /* Toolbar */
-    .toolbar { display: flex; align-items: center; padding: 0 12px; gap: 8px; background: var(--toolbar-bg); height: var(--toolbar-height); box-sizing: border-box; z-index: 5; position: relative; }
-    
-    .nav-btn { background: none; border: none; color: var(--text-color); cursor: pointer; width: 32px; height: 32px; border-radius: 50%; display: flex; justify-content: center; align-items: center; opacity: 0.8; transition: background 0.2s; }
-    .nav-btn:hover { background: var(--btn-hover-bg); opacity: 1; }
-    
-    .url-container { flex: 1; position: relative; display: flex; align-items: center; background: var(--url-bg); border-radius: 9999px; padding: 0 16px; border: 1px solid transparent; transition: all 0.2s; height: 34px; margin: 0 8px; }
-    .url-container:focus-within { background: var(--url-bg-focus); border-color: var(--accent-color); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3); }
-    
-    .url-input { width: 100%; background: none; border: none; color: var(--text-color); font-size: 14px; outline: none; padding: 0 8px; }
-    
-    .icon-btn { background: none; border: none; cursor: pointer; color: var(--text-color); opacity: 0.6; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-    .icon-btn:hover { opacity: 1; background: var(--btn-hover-bg); }
-
-    /* Menu & Settings */
-    .menu-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 100; }
-    .menu-sidebar { position: fixed; top: var(--toolbar-height); right: 0; bottom: 0; width: 320px; background: var(--toolbar-bg); box-shadow: -5px 0 15px rgba(0,0,0,0.3); z-index: 101; display: flex; flex-direction: column; border-left: 1px solid rgba(255,255,255,0.1); }
-    .menu-header { display: flex; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.1); }
-    .menu-tab { flex: 1; padding: 12px 4px; background: none; border: none; color: var(--text-color); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; opacity: 0.7; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; }
-    .menu-tab:hover { opacity: 1; background: rgba(255,255,255,0.05); }
-    .menu-tab.active { border-bottom-color: var(--accent-color); color: var(--accent-color); opacity: 1; }
-    .menu-content { flex: 1; overflow-y: auto; padding: 0; }
-    
-    .list { list-style: none; padding: 0; margin: 0; }
-    .list-item { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; }
-    .list-item:hover { background: rgba(255,255,255,0.05); }
-    .item-title { font-weight: 500; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
-    .item-url { font-size: 12px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .fav-item { display: flex; align-items: center; justify-content: space-between; }
-    
-    .settings-panel { padding: 20px; }
-    .settings-panel h3 { margin-top: 24px; margin-bottom: 16px; font-size: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; color: var(--accent-color); }
-    .settings-panel h3:first-child { margin-top: 0; }
-    .form-group { margin-bottom: 20px; }
-    .form-group label { display: block; margin-bottom: 8px; font-weight: 500; color: var(--text-color); opacity: 0.9; font-size: 14px; }
-    .form-control { width: 100%; padding: 10px 12px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: var(--text-color); border-radius: 8px; font-size: 14px; transition: border-color 0.2s; }
-    .form-control:focus { outline: none; border-color: var(--accent-color); background: rgba(0,0,0,0.3); }
-    .form-control-color { height: 44px; padding: 4px; cursor: pointer; }
-    .checkbox-group label { display: flex; align-items: center; gap: 12px; cursor: pointer; font-size: 14px; }
-    .checkbox-group input { width: 18px; height: 18px; accent-color: var(--accent-color); }
-    .save-btn { width: 100%; padding: 12px; background: var(--accent-color); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: 10px; transition: opacity 0.2s; }
-    .save-btn:hover { opacity: 0.9; }
-    .fav-info { flex: 1; overflow: hidden; }
-    .delete-btn { background: none; border: none; cursor: pointer; color: #ef4444; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-    .delete-btn:hover { background: rgba(239, 68, 68, 0.1); }
-    
-    .status-completed { color: #4ade80; }
-    .status-failed { color: #f87171; }
-    .status-downloading { color: var(--accent-color); }
-    
-    .tab-icon, .tab-icon-default { width: 16px; height: 16px; margin-right: 8px; border-radius: 2px; flex-shrink: 0; }
-    .tab-icon-default { opacity: 0.5; }
-
-    /* Suggestions Dropdown */
-    .suggestions-dropdown {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        background: var(--bg-color, #fff);
-        border: 1px solid var(--border-color, #ccc);
-        border-radius: 4px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        z-index: 1000;
-        max-height: 300px;
-        overflow-y: auto;
-        margin-top: 4px;
-        color: var(--text-color, #333);
-    }
-    .suggestion-item {
-        display: flex;
-        align-items: center;
-        padding: 8px 12px;
-        cursor: pointer;
-        border-bottom: 1px solid var(--border-color, #eee);
-    }
-    .suggestion-item:last-child { border-bottom: none; }
-    .suggestion-item:hover {
-        background-color: var(--hover-color, #f5f5f5);
-    }
-    .suggestion-icon {
-        margin-right: 10px;
-        font-size: 1.2em;
-        opacity: 0.7;
-    }
-    .suggestion-text {
-        flex: 1;
-        overflow: hidden;
-    }
-    .suggestion-title {
-        font-weight: 500;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font-size: 14px;
-    }
-    .suggestion-url {
-        font-size: 12px;
-        color: #888;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-</style>
 
 @code {
     private class BrowserTab
@@ -509,6 +333,8 @@
     private List<HistoryItem> Suggestions = new();
     private bool ShowSuggestions => Suggestions.Any() && !string.IsNullOrWhiteSpace(CurrentUrl);
 
+    private bool _suggestionsLayoutPending = false;
+
     private async Task HandleInput(ChangeEventArgs e)
     {
         CurrentUrl = e.Value?.ToString() ?? string.Empty;
@@ -529,12 +355,59 @@
                 Suggestions.Clear();
             }
         }
+        _suggestionsLayoutPending = true;
+    }
+
+    private async Task SearchHistory(string query)
+    {
+         try
+        {
+            Suggestions = await JsRuntime.InvokeAsync<List<HistoryItem>>("__TAURI__.core.invoke", "search_history", new { query = query });
+            _suggestionsLayoutPending = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fetching suggestions: {ex.Message}");
+            Suggestions.Clear();
+        }
+    }
+
+    private async Task UpdateSuggestionsLayout()
+    {
+        double height = 0;
+        if (ShowSuggestions)
+        {
+            try 
+            {
+                height = await JsRuntime.InvokeAsync<double>("measureElementHeight", ".suggestions-dropdown");
+                // Add buffer for margin-top (4px) and shadow (approx 6px)
+                if (height > 0) height += 10; 
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error measuring suggestions height: {ex.Message}");
+                // Fallback to estimation if JS fails
+                var count = Suggestions.Count;
+                height = Math.Min(count * 55 + 10, 400);
+            }
+        }
+        
+        try
+        {
+            await JsRuntime.InvokeVoidAsync("__TAURI__.core.invoke", "set_suggestions_height", new { height = (uint)height });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error setting suggestions height: {ex.Message}");
+        }
     }
 
     private async Task SelectSuggestion(HistoryItem item)
     {
         CurrentUrl = item.Url;
         Suggestions.Clear();
+        _suggestionsLayoutPending = true;
         await Navigate();
     }
     
@@ -624,7 +497,7 @@
         public bool RoundedCorners { get; set; } = true;
     }
 
-    private string ThemeStyle => $"--bg-color: {(Settings.Theme == "dark" ? "#2b2b2b" : "#ffffff")}; --header-bg: {(Settings.Theme == "dark" ? "#111111" : "#dee1e6")}; --toolbar-bg: {(Settings.Theme == "dark" ? "#2b2b2b" : "#ffffff")}; --text-color: {(Settings.Theme == "dark" ? "#e0e0e0" : "#1f2937")}; --tab-text-color: {(Settings.Theme == "dark" ? "#9ca3af" : "#4b5563")}; --tab-hover-bg: {(Settings.Theme == "dark" ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.5)")}; --btn-hover-bg: {(Settings.Theme == "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)")}; --url-bg: {(Settings.Theme == "dark" ? "rgba(0,0,0,0.2)" : "rgba(0,0,0,0.06)")}; --url-bg-focus: {(Settings.Theme == "dark" ? "rgba(0,0,0,0.3)" : "#ffffff")}; --accent-color: {Settings.AccentColor}; --border-radius: {(Settings.RoundedCorners ? "12px" : "0px")};";
+    private string ThemeStyle => $"--bg-color: {(Settings.Theme == "dark" ? "#1B1B1E" : "#ffffff")}; --header-bg: {(Settings.Theme == "dark" ? "#1B1B1E" : "#dee1e6")}; --toolbar-bg: {(Settings.Theme == "dark" ? "#202124" : "#ffffff")}; --menu-bg: {(Settings.Theme == "dark" ? "#292A2D" : "rgba(255, 255, 255, 0.95)")}; --text-color: {(Settings.Theme == "dark" ? "#E8EAED" : "#1f2937")}; --tab-text: {(Settings.Theme == "dark" ? "#9AA0A6" : "#4b5563")}; --tab-active-text: {(Settings.Theme == "dark" ? "#F1F3F4" : "#111827")}; --tab-inactive-bg: {(Settings.Theme == "dark" ? "transparent" : "rgba(229, 231, 235, 0.5)")}; --tab-active-bg: {(Settings.Theme == "dark" ? "#323639" : "#ffffff")}; --tab-hover-bg: {(Settings.Theme == "dark" ? "#28292C" : "rgba(255,255,255,0.5)")}; --btn-hover-bg: {(Settings.Theme == "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)")}; --url-bg: {(Settings.Theme == "dark" ? "#2A2A2B" : "rgba(0,0,0,0.06)")}; --url-bg-focus: {(Settings.Theme == "dark" ? "#3C4043" : "#ffffff")}; --border-color: {(Settings.Theme == "dark" ? "#3C4043" : "rgba(229, 231, 235, 0.5)")}; --accent-color: {Settings.AccentColor}; --border-radius: {(Settings.RoundedCorners ? "12px" : "0px")};";
 
     protected override async Task OnInitializedAsync()
     {
@@ -673,6 +546,12 @@
              {
                 Console.WriteLine($"Error creating initial tab: {ex.Message}");
              }
+        }
+
+        if (_suggestionsLayoutPending)
+        {
+            _suggestionsLayoutPending = false;
+            await UpdateSuggestionsLayout();
         }
     }
 
@@ -1003,6 +882,45 @@
         await CloseMenu();
     }
 
+    [JSInvokable]
+    public async Task OnNewTabRequested(TabCreatedPayload payload)
+    {
+        await CreateTabWithUrl(payload.Url);
+    }
+
+    private async Task CreateTabWithUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) url = Settings.Homepage;
+        if (string.IsNullOrWhiteSpace(url)) url = "https://www.google.com";
+        if (!url.StartsWith("http") && !url.StartsWith("file")) url = "https://" + url;
+
+        var title = "Yeni Sekme";
+        try 
+        {
+             if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+             {
+                 title = uri.Host;
+             }
+        }
+        catch {}
+        
+        var newTab = new BrowserTab { Title = title, Url = url };
+        Tabs.Add(newTab);
+        
+        ActiveTabId = newTab.Id;
+        CurrentUrl = newTab.Url;
+        StateHasChanged(); 
+        
+        try 
+        {
+            await JsRuntime.InvokeVoidAsync("__TAURI__.core.invoke", "create_tab", new { label = newTab.Id, url = newTab.Url });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating tab in Rust: {ex.Message}");
+        }
+    }
+
     private async Task CreateNewTab()
     {
         // Use homepage from settings
@@ -1242,7 +1160,33 @@
     {
         if (e.Key == "Enter")
         {
+             // Close suggestions
+             Suggestions.Clear();
+             _suggestionsLayoutPending = true;
+             StateHasChanged(); // Ensure UI updates
+
             await Navigate();
+            return;
+        }
+        
+         if (e.Key == "Escape")
+        {
+            Suggestions.Clear();
+             _suggestionsLayoutPending = true;
+             StateHasChanged();
+            return;
+        }
+
+        // Debounce logic could go here, for now we just update on every keyup that modifies text
+        // (Handled by oninput mostly, but keyup catches some edge cases)
+        // If we want real-time search suggestions as they type:
+        if (!string.IsNullOrWhiteSpace(CurrentUrl) && e.Key != "Enter" && e.Key != "Escape")
+        {
+            // Simple logic: if text is long enough, search history
+            if (CurrentUrl.Length > 1)
+            {
+               await SearchHistory(CurrentUrl);
+            }
         }
     }
 }

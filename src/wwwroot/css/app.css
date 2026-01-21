@@ -1,137 +1,244 @@
 :root {
   --bg-color: #f3f4f6;
   --toolbar-bg: rgba(255, 255, 255, 0.85); /* Semi-transparent for glass effect */
+  --menu-bg: rgba(255, 255, 255, 0.95);
   --text-color: #1f2937;
   --accent-color: #3b82f6;
   --accent-hover: #2563eb;
   --border-color: rgba(229, 231, 235, 0.5);
-  --tab-active-bg: rgba(255, 255, 255, 0.9);
+  --tab-active-bg: #ffffff;
   --tab-inactive-bg: rgba(229, 231, 235, 0.5);
+  --tab-hover-bg: rgba(255, 255, 255, 0.5);
   --tab-text: #4b5563;
   --tab-active-text: #111827;
+  --url-bg: rgba(0, 0, 0, 0.06);
+  --btn-hover-bg: rgba(0, 0, 0, 0.08);
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --radius: 8px;
   --transition: all 0.2s ease;
+  --sidebar-width: 240px;
+  --url-bg-focus: #ffffff;
+  --header-height: 104px; /* 44px tabs + 60px toolbar */
 }
 
-html, body, #app {
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-color: #1B1B1E;
+    --toolbar-bg: #202124;
+    --menu-bg: #292A2D;
+    --text-color: #E8EAED;
+    --tab-inactive-bg: transparent;
+    --tab-active-bg: #323639;
+    --tab-hover-bg: #28292C;
+    --tab-text: #9AA0A6;
+    --tab-active-text: #F1F3F4;
+    --url-bg: #2A2A2B;
+    --url-bg-focus: #3C4043;
+    --border-color: #3C4043;
+    --btn-hover-bg: rgba(255, 255, 255, 0.1);
+  }
+}
+
+body {
     margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%); /* Lumina Gradient */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: var(--bg-color);
     color: var(--text-color);
+    overflow: hidden;
+    height: 100vh;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .browser-container {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    width: 100vw;
+    overflow: hidden;
 }
 
-/* --- Tab Bar --- */
+.browser-container.vertical-mode {
+    flex-direction: row;
+}
+
+.content-area {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+/* --- Tabs --- */
 .tab-bar {
     display: flex;
     align-items: flex-end;
-    background: rgba(209, 213, 219, 0.4); /* Glassy tab bar */
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    padding: 8px 8px 0 8px;
-    height: 40px;
-    gap: 4px;
-    user-select: none;
+    padding: 8px 8px 0;
+    gap: 6px;
+    background: transparent;
+    height: 44px; /* Fixed height for tabs area */
+    z-index: 10;
+    flex-shrink: 0;
+}
+
+.tabs-scroll-area {
+    display: flex;
+    flex-grow: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 6px;
+    scrollbar-width: none;
+    align-items: flex-end;
+    height: 100%;
+}
+
+.tabs-scroll-area::-webkit-scrollbar {
+    display: none;
+}
+
+.vertical-mode .tab-bar {
+    flex-direction: column;
+    width: var(--sidebar-width);
+    height: 100%;
+    padding: 12px;
+    background-color: var(--toolbar-bg);
+    border-right: 1px solid var(--border-color);
+    align-items: stretch;
+}
+
+.vertical-mode .tabs-scroll-area {
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    align-items: stretch;
+    height: auto;
+    flex-grow: 1;
 }
 
 .tab {
     display: flex;
     align-items: center;
     padding: 6px 12px;
-    background-color: var(--tab-inactive-bg);
-    color: var(--tab-text);
+    background: var(--tab-inactive-bg);
     border-radius: 8px 8px 0 0;
-    font-size: 13px;
     max-width: 200px;
-    min-width: 100px;
+    min-width: 120px;
+    height: 36px;
     cursor: pointer;
     transition: var(--transition);
     position: relative;
-    flex: 1;
+    font-size: 13px;
+    color: var(--tab-text);
+    border: 1px solid transparent;
+    border-bottom: none;
+    flex-shrink: 0; /* Prevent tabs from squishing infinitely */
+}
+
+.tab:hover {
+    background: var(--tab-hover-bg);
 }
 
 .tab.active {
-    background-color: var(--toolbar-bg);
+    background: var(--tab-active-bg);
     color: var(--tab-active-text);
-    font-weight: 500;
     box-shadow: 0 -1px 4px rgba(0,0,0,0.05);
-    z-index: 10;
+    z-index: 2;
+    font-weight: 500;
 }
 
-.tab:hover:not(.active) {
-    background-color: #dbeafe;
+.tab-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    border-radius: 3px;
 }
 
 .tab-title {
+    flex-grow: 1;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-right: 8px;
-    flex-grow: 1;
 }
 
 .tab-close {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
-    opacity: 0.6;
+    margin-left: 6px;
+    opacity: 0;
+    transition: var(--transition);
+    font-size: 14px;
+}
+
+.tab:hover .tab-close {
+    opacity: 0.7;
 }
 
 .tab-close:hover {
-    background-color: #ef4444;
-    color: white;
     opacity: 1;
+    background-color: var(--btn-hover-bg);
+    color: #ef4444;
 }
 
 .new-tab-btn {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    border: none;
-    background: transparent;
     cursor: pointer;
-    margin-left: 4px;
-    color: #4b5563;
+    color: var(--text-color);
+    transition: var(--transition);
+    background: transparent;
+    border: none;
 }
 
 .new-tab-btn:hover {
-    background-color: rgba(255,255,255,0.5);
-    color: black;
+    background-color: var(--btn-hover-bg);
+}
+
+.vertical-mode .tab {
+    border-radius: 8px;
+    width: 100%;
+    max-width: none;
+    margin-bottom: 4px;
+    height: 40px;
+    border-bottom: 1px solid transparent;
+}
+
+.vertical-mode .tab.active { 
+    background: var(--tab-active-bg); 
+    height: 36px; 
+    box-shadow: none; 
+}
+.vertical-mode .new-tab-btn { 
+    margin: 8px auto; 
+    border-radius: 6px; 
+    width: 100%; 
+    height: 36px; 
 }
 
 /* --- Toolbar (Address Bar) --- */
 .toolbar {
     display: flex;
     gap: 12px;
-    padding: 8px 16px;
+    padding: 10px 16px;
     background-color: var(--toolbar-bg);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     align-items: center;
-    height: 50px; /* Fixed height */
+    height: 60px; /* Increased height */
     box-sizing: border-box;
     border-bottom: 1px solid var(--border-color);
     box-shadow: var(--shadow-sm);
     z-index: 9;
+    flex-shrink: 0;
 }
 
 .nav-btn {
@@ -150,7 +257,7 @@ html, body, #app {
 }
 
 .nav-btn:hover {
-    background-color: var(--bg-color);
+    background-color: var(--btn-hover-bg);
     color: var(--accent-color);
 }
 
@@ -158,16 +265,85 @@ html, body, #app {
     flex-grow: 1;
     display: flex;
     align-items: center;
-    background-color: var(--bg-color);
+    background-color: var(--url-bg);
     border-radius: 20px;
     padding: 0 16px;
-    height: 36px;
+    height: 40px; /* Increased height */
     border: 1px solid transparent;
     transition: var(--transition);
 }
 
+/* --- Suggestions Dropdown --- */
+.suggestions-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--menu-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 16px 16px;
+    box-shadow: var(--shadow-md);
+    max-height: 500px;
+    overflow-y: auto;
+    z-index: 9999;
+    margin-top: 4px;
+    padding-bottom: 8px;
+}
+
+.suggestion-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background-color 0.15s;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.suggestion-item:hover {
+    background-color: var(--tab-hover-bg);
+}
+
+.suggestion-icon {
+    margin-right: 12px;
+    font-size: 16px;
+    color: var(--text-color);
+    opacity: 0.7;
+    display: flex;
+    align-items: center;
+}
+
+.suggestion-text {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex: 1;
+}
+
+.suggestion-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.suggestion-url {
+    font-size: 12px;
+    color: var(--tab-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .url-container:focus-within {
-    background-color: white;
+    background-color: var(--url-bg-focus);
     border-color: var(--accent-color);
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
@@ -187,7 +363,7 @@ html, body, #app {
     border: none;
     cursor: pointer;
     font-size: 18px;
-    color: #9ca3af;
+    color: var(--tab-text);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -199,13 +375,13 @@ html, body, #app {
 }
 
 .icon-btn:hover {
-    color: #fbbf24;
-    background-color: rgba(0,0,0,0.05);
+    color: var(--accent-color);
+    background-color: var(--btn-hover-bg);
 }
 
 .menu-overlay {
     position: fixed;
-    top: 90px;
+    top: var(--header-height);
     left: 0;
     right: 0;
     bottom: 0;
@@ -215,15 +391,15 @@ html, body, #app {
 
 .menu-sidebar {
     position: fixed;
-    top: 90px;
+    top: var(--header-height);
     right: 0;
     bottom: 0;
     width: 320px;
-    background: rgba(255, 255, 255, 0.65); /* Glassmorphism */
+    background: var(--menu-bg); /* Use theme variable */
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border-left: 1px solid rgba(255, 255, 255, 0.4);
-    box-shadow: -8px 0 32px rgba(31, 38, 135, 0.15);
+    border-left: 1px solid var(--border-color);
+    box-shadow: var(--shadow-md);
     z-index: 100;
     display: flex;
     flex-direction: column;
@@ -254,7 +430,7 @@ html, body, #app {
 .menu-tab.active {
     color: var(--accent-color);
     border-bottom-color: var(--accent-color);
-    background-color: #f9fafb;
+    background-color: var(--tab-active-bg);
 }
 
 .menu-content {
@@ -278,7 +454,7 @@ html, body, #app {
 }
 
 .list-item:hover {
-    background-color: #eff6ff;
+    background-color: var(--tab-hover-bg);
 }
 
 .item-title {
@@ -292,7 +468,7 @@ html, body, #app {
 
 .item-url {
     font-size: 12px;
-    color: #6b7280;
+    color: var(--tab-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -312,7 +488,7 @@ html, body, #app {
 .delete-btn {
     background: transparent;
     border: none;
-    color: #9ca3af;
+    color: var(--tab-text);
     cursor: pointer;
     padding: 4px;
     border-radius: 4px;
@@ -321,12 +497,77 @@ html, body, #app {
 
 .delete-btn:hover {
     color: #ef4444;
-    background-color: #fee2e2;
+    background-color: var(--btn-hover-bg);
 }
 
 #webview-container {
     flex-grow: 1;
     /* The native webview will overlay this */
     position: relative;
-    background-color: white;
+    background-color: var(--bg-color);
+}
+
+/* --- Settings Panel --- */
+.settings-panel {
+    padding: 16px;
+    color: var(--text-color);
+}
+
+.settings-panel h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 14px;
+    color: var(--tab-text);
+}
+
+.form-control {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background-color: var(--url-bg);
+    color: var(--text-color);
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    background-color: var(--url-bg-focus);
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.save-btn {
+    width: 100%;
+    padding: 10px;
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 16px;
+}
+
+.save-btn:hover {
+    background-color: var(--accent-hover);
 }

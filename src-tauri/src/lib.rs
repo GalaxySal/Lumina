@@ -13,6 +13,7 @@ use std::fs::OpenOptions;
 use adblock::engine::Engine;
 use adblock::lists::FilterSet;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState, Modifiers, Code};
+use base64::Engine as _;
 
 static ADBLOCK_ENGINE: OnceLock<Arc<Mutex<Engine>>> = OnceLock::new();
 static ADBLOCK_STATS: OnceLock<Arc<Mutex<HashMap<String, u32>>>> = OnceLock::new();
@@ -24,12 +25,26 @@ struct AdblockStatsPayload {
 }
 
 fn check_adblock_url(url: &str, referer: Option<&str>, label: &str, app: &AppHandle) -> bool {
-    // 0. Friendly Domain Policy (Bypass Adblock for Gemini/Google Critical Services)
+    // 0. Force Block List (Overrides Friendly Policy) - Kills AdMatic & Google Ads on Friendly Sites
+    if url.contains("admatic.com.tr") || 
+       url.contains("doubleclick.net") || 
+       url.contains("googlesyndication.com") || 
+       url.contains("adnxs.com") || 
+       url.contains("smartadserver.com") ||
+       url.contains("criteo.com") ||
+       url.contains("rubiconproject.com") ||
+       url.contains("pubmatic.com") {
+        println!("Lumina Adblock: Forced block on ad domain: {}", url);
+        return true;
+    }
+
+    // 1. Friendly Domain Policy (Bypass Adblock for Gemini/Google Critical Services)
     if let Some(ref_str) = referer {
          if ref_str.contains("gemini.google.com") || 
             ref_str.contains("accounts.google.com") ||
             ref_str.contains("google.com") ||
-            ref_str.contains("youtube.com") {
+            ref_str.contains("youtube.com") ||
+            ref_str.contains("transfermarkt") {
               // println!("Lumina Adblock: Bypassing friendly domain: {}", url);
               return false;
          }
@@ -424,11 +439,11 @@ fn toggle_reader_mode(app: AppHandle, label: String) {
     }
 }
 
-fn calculate_layout(logical_size: tauri::LogicalSize<f64>, vertical_tabs: bool, menu_open: bool) -> (f64, f64, f64, f64, f64) {
-    let top_bar_height = 90.0;
+fn calculate_layout(logical_size: tauri::LogicalSize<f64>, vertical_tabs: bool, menu_open: bool, suggestions_height: f64) -> (f64, f64, f64, f64, f64) {
+    let top_bar_height = 104.0 + suggestions_height;
     let sidebar_width = 200.0;
     let menu_width = 320.0;
-    let toolbar_height = 50.0;
+    let toolbar_height = 60.0;
 
     if vertical_tabs {
         let main_height = logical_size.height;
@@ -450,13 +465,14 @@ fn calculate_layout(logical_size: tauri::LogicalSize<f64>, vertical_tabs: bool, 
 #[tauri::command]
 fn update_layout(state: tauri::State<'_, UiState>, app: AppHandle, data_store: tauri::State<'_, AppDataStore>) -> Result<(), String> {
     let menu_open = state.sidebar_open.load(std::sync::atomic::Ordering::Relaxed);
+    let suggestions_height = state.suggestions_height.load(std::sync::atomic::Ordering::Relaxed) as f64;
     let vertical_tabs = data_store.data.lock().unwrap().settings.vertical_tabs;
     let main_window = app.get_window("main").ok_or("Main window not found")?;
     let window_size = main_window.inner_size().map_err(|e| e.to_string())?;
     let scale_factor = main_window.scale_factor().map_err(|e| e.to_string())?;
     let logical_size = window_size.to_logical::<f64>(scale_factor);
     
-    let (main_height, x, y, width, height) = calculate_layout(logical_size, vertical_tabs, menu_open);
+    let (main_height, x, y, width, height) = calculate_layout(logical_size, vertical_tabs, menu_open, suggestions_height);
     
     if let Some(main_webview) = app.get_webview("main") {
         main_webview.set_size(tauri::LogicalSize::new(logical_size.width, main_height)).map_err(|e| e.to_string())?;
@@ -471,6 +487,12 @@ fn update_layout(state: tauri::State<'_, UiState>, app: AppHandle, data_store: t
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+fn set_suggestions_height(state: tauri::State<'_, UiState>, app: AppHandle, data_store: tauri::State<'_, AppDataStore>, height: u32) -> Result<(), String> {
+    state.suggestions_height.store(height, std::sync::atomic::Ordering::Relaxed);
+    update_layout(state, app, data_store)
 }
 
 #[tauri::command]
@@ -611,15 +633,7 @@ async fn install_pwa(app: AppHandle, state: tauri::State<'_, PwaState>, label: S
     Ok(())
 }
 
-async fn download_icon(app: &AppHandle, url: &str) -> Option<std::path::PathBuf> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .ok()?;
-        
-    let response = client.get(url).send().await.ok()?;
-    let bytes = response.bytes().await.ok()?;
-    
+async fn save_icon(app: &AppHandle, bytes: &[u8]) -> Option<std::path::PathBuf> {
     let app_dir = app.path().app_data_dir().ok()?;
     let icons_dir = app_dir.join("icons");
     if !icons_dir.exists() {
@@ -628,11 +642,11 @@ async fn download_icon(app: &AppHandle, url: &str) -> Option<std::path::PathBuf>
 
     // Try to load image to convert to ICO (Lumina v0.2.5 PNG->ICO Converter)
     // We use a blocking task because image decoding/encoding is CPU intensive
-    let bytes_clone = bytes.clone();
+    let bytes_vec = bytes.to_vec();
     let icons_dir_clone = icons_dir.clone();
     
     let converted_path = tokio::task::spawn_blocking(move || {
-        if let Ok(img) = image::load_from_memory(&bytes_clone) {
+        if let Ok(img) = image::load_from_memory(&bytes_vec) {
             // Resize to 256x256 for Windows compatibility (Standard Large Icon)
             // Windows icons behave best when they are 256x256
             let resized = img.resize(256, 256, image::imageops::FilterType::Lanczos3);
@@ -656,21 +670,31 @@ async fn download_icon(app: &AppHandle, url: &str) -> Option<std::path::PathBuf>
     }
     
     // Fallback: Just save as is if conversion failed (e.g. SVG or format error)
-    let extension = if url.to_lowercase().ends_with(".ico") {
-        "ico"
-    } else if url.to_lowercase().ends_with(".svg") {
-        "svg"
-    } else {
-        "png" 
-    };
+    // BUT for shortcuts we really want ICO. If we can't make ICO, we might skip returning a path
+    // or return it and hope for the best (but likely fail on Windows).
+    // Let's try to infer extension.
+    let extension = "png"; // Default to png if we can't guess
     
     let filename = format!("icon_{}.{}", chrono::Utc::now().timestamp_micros(), extension);
     let path = icons_dir.join(&filename);
     
     let mut file = tokio::fs::File::create(&path).await.ok()?;
-    file.write_all(&bytes).await.ok()?;
+    file.write_all(bytes).await.ok()?;
     
     Some(path)
+}
+
+async fn download_icon(app: &AppHandle, url: &str) -> Option<std::path::PathBuf> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0")
+        .build()
+        .ok()?;
+        
+    let response = client.get(url).send().await.ok()?;
+    let bytes = response.bytes().await.ok()?;
+    
+    save_icon(app, &bytes).await
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -695,7 +719,7 @@ fn sanitize_pwa_label(url: &str) -> String {
 }
 
 #[tauri::command]
-async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url: Option<String>) -> Result<(), String> {
+async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url: Option<String>, icon_data: Option<String>) -> Result<(), String> {
     let label = sanitize_pwa_label(&url);
     
     // Check if window already exists
@@ -704,8 +728,15 @@ async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url
         return Ok(());
     }
     
-    // Download icon if available
-    let icon_path = if let Some(f_url) = favicon_url {
+    // Get Icon Path
+    let icon_path = if let Some(data) = icon_data {
+        // Decode base64
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data) {
+             save_icon(&app, &bytes).await
+        } else {
+             None
+        }
+    } else if let Some(f_url) = favicon_url {
         download_icon(&app, &f_url).await
     } else {
         None
@@ -898,60 +929,157 @@ async fn open_flash_window(app: AppHandle, url: String) -> Result<(), String> {
 fn get_lumina_stealth_script() -> String {
     r#"
     (function() {
-        console.log("Lumina Stealth Protocol: Activated");
-
-        const host = window.location.hostname;
-        const isFriendly = host.includes('google.com') || host.includes('gemini') || host.includes('youtube.com');
-
-        if (!isFriendly) {
-            // 1. CSS Injection for Ad Blocking (Skipped on Friendly Domains)
-            const style = document.createElement('style');
-            style.textContent = `
-                /* Core Ad Patterns */
-                iframe[src*="ads"], iframe[id*="google_ads"], iframe[src*="doubleclick"], 
-                iframe[src*="amazon-adsystem"], iframe[src*="adnxs"],
-                
-                /* Common Ad Containers */
-                div[class*="ad-"], div[id*="ad-"],
-                div[class*="ads-"], div[id*="ads-"],
-                div[class*="sponsor"], div[id*="sponsor"],
-                div[class*="banner"], div[id*="banner"],
-                
-                /* Google & Networks */
-                ins.adsbygoogle, div[id^="google_ads_"],
-                
-                /* Native Ad Widgets */
-                div[id*="taboola"], div[class*="taboola"],
-                div[id*="outbrain"], div[class*="outbrain"],
-                
-                /* Overlays & Popups */
-                div[class*="popup"][class*="ad"], div[class*="modal"][class*="ad"],
-                div[id*="popup"][id*="ad"], div[id*="modal"][id*="ad"],
-                
-                /* Video Ads */
-                div[class*="video-ad"], .ad-showing
-                
-                { display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important; pointer-events: none !important; overflow: hidden !important; }
-            `;
-            
-            function injectCSS() {
-                const head = document.head || document.documentElement;
-                if (head) head.appendChild(style);
+        let host = window.location.hostname;
+        
+        // Try to get parent host if current host is empty (e.g. about:blank iframe)
+        try {
+            if ((!host || host === '') && window.parent && window.parent.location && window.parent.location.hostname) {
+                host = window.parent.location.hostname;
             }
-            
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', injectCSS);
+        } catch(e) {
+            // Access denied to parent (cross-origin)
+        }
+        
+        console.log("Lumina Stealth Protocol: Activated on " + host);
+
+        // 0. Monkey-Patch IntersectionObserver to prevent ad script crashes
+        const originalObserve = IntersectionObserver.prototype.observe;
+        IntersectionObserver.prototype.observe = function(target) {
+            if (!target || !(target instanceof Element)) {
+                // Silently ignore invalid targets (likely removed ads)
+                return;
+            }
+            return originalObserve.apply(this, arguments);
+        };
+
+        // 0.1 Monkey-Patch XHR to fix Transfermarkt malformed URLs
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url, ...args) {
+            if (typeof url === 'string' && (window.location.hostname.includes('transfermarkt') || window.location.hostname.includes('mackolik'))) {
+                 // Remove spaces (%20) from URL path which break AJAX calls
+                 if (url.includes('%20') || url.includes(' ')) {
+                     const cleanUrl = url.replace(/%20/g, '').replace(/\s/g, '');
+                     console.log("Lumina Fix: Corrected malformed URL", url, "->", cleanUrl);
+                     url = cleanUrl;
+                 }
+            }
+            return originalOpen.call(this, method, url, ...args);
+        };
+
+        const isFriendly = host.includes('google.com') || host.includes('gemini') || host.includes('youtube.com') || host.includes('transfermarkt') || host.includes('cdn.privacy-mgmt.com') || host.includes('consensu') || host.includes('cmp') || host.includes('quantcast');
+
+        // Force remove aria-hidden from body to prevent accessibility lock
+        if (isFriendly) {
+            const ariaObserver = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'aria-hidden') {
+                        if (document.body.getAttribute('aria-hidden') === 'true') {
+                            document.body.removeAttribute('aria-hidden');
+                        }
+                    }
+                });
+            });
+            if (document.body) {
+                ariaObserver.observe(document.body, { attributes: true });
+                document.body.removeAttribute('aria-hidden');
             } else {
-                injectCSS();
+                document.addEventListener('DOMContentLoaded', () => {
+                    ariaObserver.observe(document.body, { attributes: true });
+                    document.body.removeAttribute('aria-hidden');
+                });
             }
+        }
+
+        // 1. CSS Injection Strategy
+        // Split into "Core/High-Confidence" (Always Safe) and "Aggressive" (Skip on Friendly)
+        
+        const coreAdStyles = `
+            /* High-Confidence Ad Patterns - Safe to block everywhere */
+            iframe[src*="ads"], iframe[id*="google_ads"], iframe[src*="doubleclick"], 
+            iframe[src*="amazon-adsystem"], iframe[src*="adnxs"], iframe[src*="teads"],
+            
+            /* Google & Networks */
+            ins.adsbygoogle, div[id^="google_ads_"],
+            
+            /* Native Ad Widgets */
+            div[id*="taboola"], div[class*="taboola"],
+            div[id*="outbrain"], div[class*="outbrain"],
+            
+            /* Specific Ad Iframes */
+            iframe[title*="Advertisement"], iframe[title*="reklam"]
+            
+            { display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important; pointer-events: none !important; overflow: hidden !important; }
+        `;
+
+        const aggressiveAdStyles = `
+            /* Common Ad Containers - Risk of False Positives */
+            div[class*="ad-"], div[id*="ad-"],
+            div[class*="ads-"], div[id*="ads-"],
+            div[class*="sponsor"], div[id*="sponsor"],
+            div[class*="banner"], div[id*="banner"],
+            
+            /* Overlays & Popups - Can kill Login Modals */
+            div[class*="popup"][class*="ad"], div[class*="modal"][class*="ad"],
+            div[id*="popup"][id*="ad"], div[id*="modal"][id*="ad"],
+            
+            /* Video Ads */
+            div[class*="video-ad"], .ad-showing
+            
+            { display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important; pointer-events: none !important; overflow: hidden !important; }
+        `;
+        
+        function injectCSS(cssContent) {
+            const style = document.createElement('style');
+            style.textContent = cssContent;
+            const head = document.head || document.documentElement;
+            if (head) head.appendChild(style);
+        }
+        
+        function initCSS() {
+            // Always inject Core Styles
+            injectCSS(coreAdStyles);
+            
+            // Only inject Aggressive Styles if NOT Friendly
+            if (!isFriendly) {
+                injectCSS(aggressiveAdStyles);
+            } else {
+                console.log("Lumina Stealth: Friendly domain (" + host + ") - Skipping aggressive CSS.");
+            }
+        }
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initCSS);
         } else {
-            console.log("Lumina Stealth: Friendly domain detected (" + host + "), skipping CSS injection.");
+            initCSS();
         }
 
         // 2. Global Ad-Intervention (Overlay Remover)
         function killAdOverlays() {
-            // Lumina Friendly Exception: Skip aggressive removal on Google and Gemini
+            // Safety: On Friendly domains, we ONLY unlock scroll and kill specific IFRAMES.
+            // We do NOT kill divs/overlays to avoid breaking login/navigation.
+            
             if (isFriendly) {
+                // FORCE SCROLL UNLOCK - Fixes "Transfermarkt scroll lock"
+                if (document.body) {
+                    document.body.style.setProperty('overflow', 'auto', 'important');
+                    document.body.style.setProperty('overflow-x', 'auto', 'important');
+                    document.body.style.setProperty('overflow-y', 'auto', 'important');
+                }
+                if (document.documentElement) {
+                    document.documentElement.style.setProperty('overflow', 'auto', 'important');
+                    document.documentElement.style.setProperty('overflow-x', 'auto', 'important');
+                    document.documentElement.style.setProperty('overflow-y', 'auto', 'important');
+                }
+                
+                // Kill only ad iframes (which might be transparent overlays)
+                document.querySelectorAll('iframe').forEach(el => {
+                     const src = (el.src || '').toLowerCase();
+                     const id = (el.id || '').toLowerCase();
+                     if (src.includes('ads') || src.includes('doubleclick') || id.includes('google_ads') || src.includes('teads')) {
+                         console.log("Lumina Friendly-Kill: Removing ad iframe ->", el);
+                         el.remove();
+                     }
+                });
                 return;
             }
 
@@ -962,7 +1090,13 @@ fn get_lumina_stealth_script() -> String {
             elements.forEach(el => {
                 const id = (el.id || '').toLowerCase();
                 const cls = (el.className || '').toString().toLowerCase();
-                const style = window.getComputedStyle(el);
+                // Safety check for null style (e.g. detached elements)
+                let style;
+                try {
+                     style = window.getComputedStyle(el);
+                } catch(e) { return; }
+                
+                if (!style) return;
                 
                 // Check for fixed/absolute positioning + high z-index
                 const isFloating = style.position === 'fixed' || style.position === 'absolute';
@@ -974,6 +1108,17 @@ fn get_lumina_stealth_script() -> String {
                 if (isFloating && isHighZ && hasKeyword) {
                         console.log("Lumina Ad-Intervention: Killing overlay ->", el);
                         el.remove();
+                        // Unlock scroll if blocked by overlay
+                        if (document.body) document.body.style.overflow = 'auto';
+                        if (document.documentElement) document.documentElement.style.overflow = 'auto';
+                        
+                        // Try to unlock parent scroll if in iframe
+                        try {
+                            if (window.parent && window.parent !== window) {
+                                if (window.parent.document.body) window.parent.document.body.style.overflow = 'auto';
+                                if (window.parent.document.documentElement) window.parent.document.documentElement.style.overflow = 'auto';
+                            }
+                        } catch(e) {}
                 }
                 
                 // Also kill iframes that are likely ads but missed by CSS
@@ -996,6 +1141,35 @@ fn get_lumina_stealth_script() -> String {
         setTimeout(killAdOverlays, 2000);
         setTimeout(killAdOverlays, 5000);
         setTimeout(killAdOverlays, 10000);
+        // More frequent checks for scroll lock on Friendly domains
+        if (isFriendly) {
+             setInterval(() => {
+                 // Check if body exists before accessing style
+                 if (document.body) {
+                     const s = window.getComputedStyle(document.body);
+                     if (s.overflow === 'hidden' || s.overflowX === 'hidden' || s.overflowY === 'hidden') {
+                        document.body.style.setProperty('overflow', 'auto', 'important');
+                        document.body.style.setProperty('overflow-x', 'auto', 'important');
+                        document.body.style.setProperty('overflow-y', 'auto', 'important');
+                     }
+                     if (s.position === 'fixed') {
+                        document.body.style.setProperty('position', 'static', 'important');
+                     }
+                 }
+                 // Check if documentElement exists before accessing style
+                 if (document.documentElement) {
+                     const s = window.getComputedStyle(document.documentElement);
+                     if (s.overflow === 'hidden' || s.overflowX === 'hidden' || s.overflowY === 'hidden') {
+                        document.documentElement.style.setProperty('overflow', 'auto', 'important');
+                        document.documentElement.style.setProperty('overflow-x', 'auto', 'important');
+                        document.documentElement.style.setProperty('overflow-y', 'auto', 'important');
+                     }
+                     if (s.position === 'fixed') {
+                        document.documentElement.style.setProperty('position', 'static', 'important');
+                     }
+                 }
+             }, 1000);
+        }
         
     })();
     "#.to_string()
@@ -1055,6 +1229,8 @@ fn update_tab_info(app: AppHandle, history_manager: tauri::State<'_, HistoryMana
 
 struct UiState {
     sidebar_open: std::sync::atomic::AtomicBool,
+    suggestions_height: std::sync::atomic::AtomicU32,
+    current_tab: std::sync::Mutex<Option<String>>,
 }
 
 
@@ -1072,8 +1248,9 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
     
     let vertical_tabs = data_store.data.lock().unwrap().settings.vertical_tabs;
     let sidebar_open = state.sidebar_open.load(std::sync::atomic::Ordering::Relaxed);
+    let suggestions_height = state.suggestions_height.load(std::sync::atomic::Ordering::Relaxed) as f64;
     
-    let (main_height, x, y, tab_width, tab_height) = calculate_layout(logical_size, vertical_tabs, sidebar_open);
+    let (main_height, x, y, tab_width, tab_height) = calculate_layout(logical_size, vertical_tabs, sidebar_open, suggestions_height);
     
     // Resize main webview (UI) to cover the top area
     if let Some(main_webview) = app.get_webview("main") {
@@ -1086,65 +1263,24 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
 
     let label_clone = label.clone();
     
-    let ad_block_script = format!("{}\n{}", get_lumina_stealth_script(), r#"
-        (function() {
-            // Helper to generate UUID for new tabs
-            function generateUUID() {
-                if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-                    return crypto.randomUUID();
-                }
-                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                    return v.toString(16);
-                });
-            }
-
-            // Override window.open to open in new tab via Rust
-            window.open = function(url, target, features) {
-                console.log("Intercepted window.open: " + url);
-                if (url) {
-                    try {
-                        url = new URL(url, window.location.href).href;
-                    } catch(e) {
-                        console.error("Invalid URL:", url);
-                        return null;
-                    }
-                    
-                    if (window.__TAURI__) {
-                        window.__TAURI__.core.invoke('create_tab', { 
-                            label: 'tab-' + generateUUID(), 
-                            url: url 
-                        }).catch(err => console.error("Failed to create tab:", err));
-                    }
-                }
-                return null;
-            };
-
-            // Intercept links with target="_blank"
-            document.addEventListener('click', function(e) {
-                let target = e.target;
-                while (target && target.tagName !== 'A') {
-                    target = target.parentElement;
-                }
-                if (target && target.tagName === 'A' && target.target === '_blank') {
-                    e.preventDefault();
-                    console.log("Intercepted target=_blank link: " + target.href);
-                    if (window.__TAURI__) {
-                        window.__TAURI__.core.invoke('create_tab', { 
-                            label: 'tab-' + generateUUID(), 
-                            url: target.href 
-                        }).catch(err => console.error("Failed to create tab:", err));
-                    }
-                }
-            }, true);
-        })();
-    "#);
+    let ad_block_script = get_lumina_stealth_script();
 
     // Attempt to get invoke key
      let invoke_key = app.invoke_key();
      
      let info_script = format!(r#"
          (function() {{
+             // Prevent execution in subframes (ads, tracking pixels) to stop IPC errors
+             try {{
+                if (window.self !== window.top) return;
+             }} catch(e) {{ return; }}
+
+             // Block execution on known ad domains (even if top-level)
+             try {{
+                 let host = window.location.hostname;
+                 if (host.includes('doubleclick') || host.includes('googlesyndication') || host.includes('adnxs') || host.includes('teads')) return;
+             }} catch(e) {{}}
+
              window.__TAB_LABEL__ = "{}";
              window.__TAURI_INVOKE_KEY__ = "{}";
             
@@ -1173,6 +1309,12 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
             // Custom IPC for our browser tabs via native postMessage
             // This bypasses CSP 'connect-src' and 'frame-src' restrictions.
             function invoke(cmd, args) {{
+                // Try Tauri v2 standard invoke first (if available and not blocked)
+                if (window.__TAURI__ && window.__TAURI__.core) {{
+                    window.__TAURI__.core.invoke(cmd, args).catch(err => console.error("Tauri invoke failed:", err));
+                    return;
+                }}
+                
                 // Use a static counter to ensure unique, valid u32 IDs
                 if (typeof window.__IPC_COUNTER === 'undefined') {{
                     window.__IPC_COUNTER = 0;
@@ -1215,7 +1357,7 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
                 
                 if (window.chrome && window.chrome.webview) {{
                     // WebView2 (Windows)
-                    window.chrome.webview.postMessage(JSON.stringify(msg));
+                    window.chrome.webview.postMessage(msg); // Send object directly for WebView2
                 }} else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ipc) {{
                     // WebKit (macOS / Linux)
                     window.webkit.messageHandlers.ipc.postMessage(msg);
@@ -1343,6 +1485,119 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
                 }}
             }}
 
+            // Handle new tab requests
+            window.open = function(url, target, features) {{
+                if (url) {{
+                    window.__TAURI__.event.emit('request-new-tab', {{ label: 'new-tab', url: url }});
+                }}
+                return null;
+            }};
+            
+            document.addEventListener('click', (e) => {{
+                let target = e.target;
+                while(target && target.tagName !== 'A') target = target.parentElement;
+                if (target && target.tagName === 'A' && target.target === '_blank') {{
+                    e.preventDefault();
+                    window.__TAURI__.event.emit('request-new-tab', {{ label: 'new-tab', url: target.href }});
+                }}
+            }}, true);
+
+            document.addEventListener('auxclick', (e) => {{
+                if (e.button === 1) {{
+                    let target = e.target;
+                    while(target && target.tagName !== 'A') target = target.parentElement;
+                    if (target && target.tagName === 'A') {{
+                        e.preventDefault();
+                        window.__TAURI__.event.emit('request-new-tab', {{ label: 'new-tab', url: target.href }});
+                    }}
+                }}
+            }}, true);
+
+            // Custom Context Menu
+            document.addEventListener('contextmenu', (e) => {{
+                // Check if target is link
+                let target = e.target;
+                let linkUrl = null;
+                while(target && target.tagName !== 'A') target = target.parentElement;
+                if (target && target.tagName === 'A' && target.href) {{
+                    linkUrl = target.href;
+                }}
+
+                if (linkUrl) {{
+                    e.preventDefault();
+                    e.stopPropagation(); // Stop propagation immediately
+                    
+                    // Remove existing menu
+                    const existing = document.getElementById('lumina-context-menu');
+                    if (existing) existing.remove();
+
+                    const menu = document.createElement('div');
+                    menu.id = 'lumina-context-menu';
+                    menu.style.position = 'fixed';
+                    menu.style.top = e.clientY + 'px';
+                    menu.style.left = e.clientX + 'px';
+                    menu.style.zIndex = '2147483647'; // Max z-index
+                    menu.style.background = '#292a2d';
+                    menu.style.border = '1px solid #3c4043';
+                    menu.style.borderRadius = '4px';
+                    menu.style.padding = '4px 0';
+                    menu.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+                    menu.style.minWidth = '150px';
+                    menu.style.color = '#e8eaed';
+                    menu.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+                    menu.style.fontSize = '13px';
+                    menu.style.userSelect = 'none';
+
+                    const createItem = (text, onClick) => {{
+                        const item = document.createElement('div');
+                        item.innerText = text;
+                        item.style.padding = '6px 12px';
+                        item.style.cursor = 'pointer';
+                        item.onmouseenter = () => item.style.background = '#3c4043';
+                        item.onmouseleave = () => item.style.background = 'transparent';
+                        item.onclick = (ev) => {{
+                            ev.stopPropagation(); 
+                            onClick();
+                            menu.remove();
+                        }};
+                        return item;
+                    }};
+
+                    menu.appendChild(createItem('Open Link in New Tab', () => {{
+                         let uniqueLabel = 'tab-' + Date.now() + '-' + Math.floor(Math.random() * 1000000);
+                         invoke('create_tab', {{ label: uniqueLabel, url: linkUrl }});
+                    }}));
+                    
+                    // Separator
+                    const sep = document.createElement('div');
+                    sep.style.height = '1px';
+                    sep.style.background = '#3c4043';
+                    sep.style.margin = '4px 0';
+                    menu.appendChild(sep);
+
+                    menu.appendChild(createItem('Back', () => window.history.back()));
+                    menu.appendChild(createItem('Forward', () => window.history.forward()));
+                    menu.appendChild(createItem('Reload', () => window.location.reload()));
+
+                    document.body.appendChild(menu);
+                    
+                    // Close on click outside
+                    const closeMenu = () => {{
+                        menu.remove();
+                        document.removeEventListener('click', closeMenu);
+                        document.removeEventListener('contextmenu', closeMenu);
+                    }};
+                    // Delay slightly to avoid immediate trigger
+                    setTimeout(() => {{
+                        document.addEventListener('click', closeMenu);
+                        document.addEventListener('contextmenu', (e) => {{
+                             if (e.target.closest('#lumina-context-menu')) return;
+                             closeMenu();
+                        }});
+                    }}, 100);
+                }}
+            }}, true); // Use Capture phase to preempt site scripts
+
             if (document.body || document.head || document.documentElement) {{
                 initObserver();
             }} else {{
@@ -1447,9 +1702,18 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
     match res {
         Ok(webview) => {
             // New tab is created. 
-            // We should hide other tabs (browser webviews) if we want to simulate "opening" this one foreground.
-            // But 'switch_tab' should handle visibility. 
-            // For now, let's just make sure this one is shown.
+            
+            // Optimization: Hide previous tab immediately to prevent stacking/flicker
+            {
+                let mut current = state.current_tab.lock().unwrap();
+                if let Some(ref old_label) = *current {
+                     if let Some(old_webview) = app.get_webview(old_label) {
+                         let _ = old_webview.hide();
+                     }
+                }
+                *current = Some(label.clone());
+            }
+
             let _ = webview.show();
             let _ = webview.set_focus();
             let _ = app.emit("tab-created", TabCreatedPayload {
@@ -1471,34 +1735,37 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
 }
 
 #[tauri::command]
-fn switch_tab(app: AppHandle, label: String) {
+fn switch_tab(app: AppHandle, state: tauri::State<'_, UiState>, label: String) {
     println!("Switching to tab: {}", label);
     
-    // Hide all webviews that are NOT the main UI and NOT the target tab
-    // Note: We need a way to identify "browser tabs". 
-    // Convention: anything that isn't "main" is a browser tab.
+    let mut current = state.current_tab.lock().unwrap();
     
-    let webviews = app.webviews();
-    for webview in webviews {
-        // Handle both Vec<Webview> and HashMap iteration (tuple) just in case
-        // But since compiler says it is a tuple (String, Webview), we treat it as such.
-        // Wait, we can't easily handle both. We must match the compiler error.
-        // The error says: no method named `label` found for tuple `(std::string::String, tauri::Webview)`
-        // This means 'webview' variable IS the tuple.
-        let webview_instance = &webview.1; 
-        
-        let wv_label = webview_instance.label();
-        if wv_label == "main" {
-            continue;
+    // Optimization: Only hide the previously active tab instead of iterating all webviews
+    if let Some(ref old_label) = *current {
+        if old_label != &label {
+            if let Some(old_webview) = app.get_webview(old_label) {
+                let _ = old_webview.hide();
+            }
         }
-        
-        if wv_label == label {
-            let _ = webview_instance.show();
-            let _ = webview_instance.set_focus();
-        } else {
-            let _ = webview_instance.hide();
+    } else {
+        // Fallback: If no current tab tracked yet (first switch), hide all others
+        let webviews = app.webviews();
+        for webview in webviews {
+            let webview_instance = &webview.1; 
+            if webview_instance.label() != "main" && webview_instance.label() != label {
+                let _ = webview_instance.hide();
+            }
         }
     }
+    
+    // Show the new tab
+    if let Some(webview) = app.get_webview(&label) {
+        let _ = webview.show();
+        let _ = webview.set_focus();
+    }
+    
+    // Update state
+    *current = Some(label);
 }
 
 #[tauri::command]
@@ -1518,7 +1785,7 @@ async fn init_browser(app: AppHandle, window: tauri::Window) {
     let window_size = window.inner_size().unwrap();
     let scale_factor = window.scale_factor().unwrap();
     let logical_size = window_size.to_logical::<f64>(scale_factor);
-    let top_ui_height = 90.0;
+    let top_ui_height = 104.0;
     
     if let Some(main_webview) = app.get_webview("main") {
         let _ = main_webview.set_size(tauri::LogicalSize::new(logical_size.width, top_ui_height));
@@ -1770,6 +2037,9 @@ async fn check_pwa_manifest(app: AppHandle, state: tauri::State<'_, PwaState>, l
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(
@@ -1786,13 +2056,20 @@ pub fn run() {
                 }
             }).build()
         )
-        .manage(UiState { sidebar_open: std::sync::atomic::AtomicBool::new(false) })
+        .manage(UiState { 
+            sidebar_open: std::sync::atomic::AtomicBool::new(false),
+            suggestions_height: std::sync::atomic::AtomicU32::new(0),
+            current_tab: std::sync::Mutex::new(None),
+        })
         .manage(PwaState { icons: std::sync::Mutex::new(std::collections::HashMap::new()) })
         .setup(|app| {
             // Register Global Shortcut
             #[cfg(desktop)]
             {
-                app.handle().global_shortcut().register("Ctrl+Space")?;
+                let _ = app.handle().global_shortcut().unregister_all();
+                if let Err(e) = app.handle().global_shortcut().register("Ctrl+Space") {
+                    println!("Warning: Failed to register global shortcut 'Ctrl+Space': {}", e);
+                }
             }
 
             // Initialize Adblock Engine
@@ -1923,20 +2200,24 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             match event {
-                tauri::WindowEvent::CloseRequested { api, .. } => {
-                    let _ = window.hide();
-                    api.prevent_close();
+                tauri::WindowEvent::CloseRequested { .. } => {
+                     // Allow window to close (and app to exit if it's the last window)
+                     // let _ = window.hide();
+                     // api.prevent_close();
                 }
                 tauri::WindowEvent::Resized(size) => {
                     if window.label() == "main" {
                          let scale_factor = window.scale_factor().unwrap_or(1.0);
                          let logical_size = size.to_logical::<f64>(scale_factor);
-                         let top_ui_height = 90.0;
                          
                          let state = window.app_handle().state::<UiState>();
                          let sidebar_open = state.sidebar_open.load(std::sync::atomic::Ordering::Relaxed);
+                         let suggestions_height = state.suggestions_height.load(std::sync::atomic::Ordering::Relaxed) as f64;
                          
-                         let main_height = if sidebar_open { logical_size.height } else { top_ui_height };
+                         let data_store = window.app_handle().state::<AppDataStore>();
+                         let vertical_tabs = data_store.data.lock().unwrap().settings.vertical_tabs;
+
+                         let (main_height, x, y, width, height) = calculate_layout(logical_size, vertical_tabs, sidebar_open, suggestions_height);
                          
                          // Resize main webview (UI)
                          if let Some(main_webview) = window.app_handle().get_webview("main") {
@@ -1945,14 +2226,12 @@ pub fn run() {
     
                          // Resize ALL other webviews (browser tabs)
                          let webviews = window.app_handle().webviews();
-                         let sidebar_width = if sidebar_open { 320.0 } else { 0.0 };
-                         let new_width = logical_size.width - sidebar_width;
                          
                          for webview in webviews {
                              let webview_instance = &webview.1;
                              if webview_instance.label() != "main" {
-                                 let _ = webview_instance.set_position(tauri::LogicalPosition::new(0.0, top_ui_height));
-                                 let _ = webview_instance.set_size(tauri::LogicalSize::new(new_width, logical_size.height - top_ui_height));
+                                 let _ = webview_instance.set_position(tauri::LogicalPosition::new(x, y));
+                                 let _ = webview_instance.set_size(tauri::LogicalSize::new(width, height));
                              }
                          }
                     }
@@ -1980,6 +2259,7 @@ pub fn run() {
             remove_favorite, 
             get_favorites, 
             toggle_sidebar, 
+            set_suggestions_height,
             get_settings, 
             save_settings, 
             open_file, 

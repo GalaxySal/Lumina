@@ -70,6 +70,11 @@
                     dotNetRef.invokeMethodAsync('OnTabUpdated', event.payload);
                 });
 
+                await window.__TAURI__.event.listen('request-new-tab', (event) => {
+                    console.log("New tab requested:", event);
+                    dotNetRef.invokeMethodAsync('OnNewTabRequested', event.payload);
+                });
+
                 await window.__TAURI__.event.listen('pwa-can-install', (event) => {
                     console.log("PWA detected:", event);
                     dotNetRef.invokeMethodAsync('OnPwaDetected', event.payload.label);
@@ -85,6 +90,14 @@
         };
         window.registerCommandPaletteShortcut = (dotNetRef) => {
              window.commandPaletteRef = dotNetRef;
+        };
+
+        window.measureElementHeight = (selector) => {
+            const el = document.querySelector(selector);
+            if (el) {
+                return el.getBoundingClientRect().height;
+            }
+            return 0;
         };
     </script>
   </body>
