@@ -137,10 +137,17 @@
 
         function tryAgain() {
             if (targetUrl) {
-                window.location.href = targetUrl;
-            } else {
-                window.history.back();
+                try {
+                    const url = new URL(targetUrl);
+                    if (url.protocol === 'http:' || url.protocol === 'https:') {
+                        window.location.href = targetUrl;
+                        return;
+                    }
+                } catch (e) {
+                    console.error("Invalid URL:", targetUrl);
+                }
             }
+            window.history.back();
         }
 
         function goHome() {
