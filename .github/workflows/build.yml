@@ -40,6 +40,12 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0" --locked
 
+      - name: Get Version
+        shell: bash
+        run: |
+          VERSION=$(grep -oP '"version":\s*"\K[^"]+' src-tauri/tauri.conf.json)
+          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
+
       - name: Generate Release Notes
         shell: bash
         run: |
@@ -98,3 +104,18 @@ jobs:
           releaseBody: ${{ env.RELEASE_NOTES }}
           releaseDraft: false
           prerelease: false
+
+      - name: Prepare and Upload Portable Exe (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          Copy-Item "src-tauri/target/release/Lumina.exe" -Destination "src-tauri/target/release/Lumina-Portable.exe"
+        
+      - name: Upload Portable Asset
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: src-tauri/target/release/Lumina-Portable.exe
+          tag_name: v${{ env.PACKAGE_VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -718,6 +718,161 @@ fn sanitize_pwa_label(url: &str) -> String {
     format!("pwa-{}", chrono::Utc::now().timestamp_micros())
 }
 
+fn get_pwa_init_script(label: &str, invoke_key: &str) -> String {
+    format!(r#"
+        (function() {{
+            window.__TAB_LABEL__ = "{}";
+            window.__TAURI_INVOKE_KEY__ = "{}";
+            
+            // Custom IPC for PWA windows
+            function invoke(cmd, args) {{
+                // Reuse the same logic as create_tab
+                if (window.__TAURI__ && window.__TAURI__.core) {{
+                    window.__TAURI__.core.invoke(cmd, args).catch(err => console.error("Tauri invoke failed:", err));
+                    return;
+                }}
+                
+                if (typeof window.__IPC_COUNTER === 'undefined') window.__IPC_COUNTER = 0;
+                window.__IPC_COUNTER = (window.__IPC_COUNTER + 1) % 4000000000;
+                var callbackId = window.__IPC_COUNTER;
+                var noOp = function(res) {{}};
+                
+                try {{
+                     if (window.__TAURI_INTERNALS__) {{
+                         if (!window.__TAURI_INTERNALS__.callbacks) window.__TAURI_INTERNALS__.callbacks = {{}};
+                         window.__TAURI_INTERNALS__.callbacks[callbackId] = {{ resolve: noOp, reject: noOp }};
+                     }}
+                }} catch(e) {{}}
+                
+                setTimeout(function() {{
+                    try {{
+                        if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.callbacks) {{
+                             delete window.__TAURI_INTERNALS__.callbacks[callbackId];
+                        }}
+                    }} catch(e) {{}}
+                }}, 60000);
+
+                var msg = {{
+                    cmd: cmd,
+                    callback: callbackId, 
+                    error: callbackId,
+                    payload: args,
+                    __TAURI_INVOKE_KEY__: window.__TAURI_INVOKE_KEY__
+                }};
+                
+                if (window.chrome && window.chrome.webview) {{
+                    window.chrome.webview.postMessage(msg);
+                }} else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ipc) {{
+                    window.webkit.messageHandlers.ipc.postMessage(msg);
+                }}
+            }}
+
+            // Override window.open
+            window.open = function(url, target, features) {{
+                if (url) {{
+                    // Call create_tab directly on the main window via our fixed command
+                    invoke('create_tab', {{ label: 'new-tab-' + Date.now() + '-' + Math.floor(Math.random() * 1000), url: url }});
+                }}
+                return null;
+            }};
+            
+            // Handle _blank links
+            document.addEventListener('click', (e) => {{
+                let target = e.target;
+                while(target && target.tagName !== 'A') target = target.parentElement;
+                if (target && target.tagName === 'A' && target.target === '_blank') {{
+                    e.preventDefault();
+                    invoke('create_tab', {{ label: 'new-tab-' + Date.now() + '-' + Math.floor(Math.random() * 1000), url: target.href }});
+                }}
+            }}, true);
+
+            document.addEventListener('auxclick', (e) => {{
+                if (e.button === 1) {{
+                    let target = e.target;
+                    while(target && target.tagName !== 'A') target = target.parentElement;
+                    if (target && target.tagName === 'A') {{
+                        e.preventDefault();
+                        invoke('create_tab', {{ label: 'new-tab-' + Date.now() + '-' + Math.floor(Math.random() * 1000), url: target.href }});
+                    }}
+                }}
+            }}, true);
+
+            // Context Menu Override
+            document.addEventListener('contextmenu', (e) => {{
+                let target = e.target;
+                let linkUrl = null;
+                while(target && target.tagName !== 'A') target = target.parentElement;
+                if (target && target.tagName === 'A' && target.href) {{
+                    linkUrl = target.href;
+                }}
+
+                if (linkUrl) {{
+                    e.preventDefault();
+                    e.stopPropagation(); 
+                    
+                    const existing = document.getElementById('lumina-context-menu');
+                    if (existing) existing.remove();
+
+                    const menu = document.createElement('div');
+                    menu.id = 'lumina-context-menu';
+                    menu.style.position = 'fixed';
+                    menu.style.top = e.clientY + 'px';
+                    menu.style.left = e.clientX + 'px';
+                    menu.style.zIndex = '2147483647'; 
+                    menu.style.background = '#292a2d';
+                    menu.style.border = '1px solid #3c4043';
+                    menu.style.borderRadius = '4px';
+                    menu.style.padding = '4px 0';
+                    menu.style.color = '#e8eaed';
+                    menu.style.fontFamily = 'system-ui, sans-serif';
+                    menu.style.fontSize = '13px';
+                    menu.style.userSelect = 'none';
+
+                    const createItem = (text, onClick) => {{
+                        const item = document.createElement('div');
+                        item.innerText = text;
+                        item.style.padding = '6px 12px';
+                        item.style.cursor = 'pointer';
+                        item.onmouseenter = () => item.style.background = '#3c4043';
+                        item.onmouseleave = () => item.style.background = 'transparent';
+                        item.onclick = (ev) => {{
+                            ev.stopPropagation(); 
+                            onClick();
+                            menu.remove();
+                        }};
+                        return item;
+                    }};
+
+                    menu.appendChild(createItem('Open Link in New Tab', () => {{
+                         invoke('create_tab', {{ label: 'tab-' + Date.now() + '-' + Math.floor(Math.random() * 1000), url: linkUrl }});
+                    }}));
+                    
+                    // Add copy link
+                    menu.appendChild(createItem('Copy Link Address', () => {{
+                         navigator.clipboard.writeText(linkUrl);
+                    }}));
+                    
+                    document.body.appendChild(menu);
+                    
+                    const closeMenu = () => {{
+                        menu.remove();
+                        document.removeEventListener('click', closeMenu);
+                        document.removeEventListener('contextmenu', closeMenu);
+                    }};
+                    setTimeout(() => {{
+                        document.addEventListener('click', closeMenu);
+                        document.addEventListener('contextmenu', (e) => {{
+                             if (e.target.closest('#lumina-context-menu')) return;
+                             closeMenu();
+                        }});
+                    }}, 100);
+                }}
+            }}, true);
+
+        }})();
+    "#, label, invoke_key)
+}
+
 #[tauri::command]
 async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url: Option<String>, icon_data: Option<String>) -> Result<(), String> {
     let label = sanitize_pwa_label(&url);
@@ -750,11 +905,13 @@ async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url
     let app_clone = app.clone();
     let label_clone = label.clone();
 
-    // Inject a small script to ensure window.close() works if needed, 
-    // but primarily we rely on native decorations for controls.
-    // We also ensure the window is focused.
+    // Inject PWA script for handling window.open and context menu
+    let invoke_key = app.invoke_key();
+    let script = get_pwa_init_script(&label, &invoke_key);
+
     let mut builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
-        .title(&title);
+        .title(&title)
+        .initialization_script(&script);
 
     if let Some(path) = icon_path_clone {
         if let Ok(img) = image::open(&path) {
@@ -1236,14 +1393,17 @@ struct UiState {
 
 
 #[tauri::command]
-async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store: tauri::State<'_, AppDataStore>, label: String, url: String, window: tauri::Window) -> Result<(), String> {
+async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store: tauri::State<'_, AppDataStore>, label: String, url: String, _window: tauri::Window) -> Result<(), String> {
+    // Ensure we are targeting the main window for the new tab, regardless of which window requested it.
+    let target_window = app.get_window("main").ok_or("Main window not found")?;
+
     if app.get_webview(&label).is_some() {
         // If tab already exists, just switch to it (optional logic)
         return Ok(());
     }
 
-    let window_size = window.inner_size().map_err(|e| e.to_string())?;
-    let scale_factor = window.scale_factor().map_err(|e| e.to_string())?;
+    let window_size = target_window.inner_size().map_err(|e| e.to_string())?;
+    let scale_factor = target_window.scale_factor().map_err(|e| e.to_string())?;
     let logical_size = window_size.to_logical::<f64>(scale_factor);
     
     let vertical_tabs = data_store.data.lock().unwrap().settings.vertical_tabs;
@@ -1693,7 +1853,7 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
             true
         });
     
-    let res = window.add_child(
+    let res = target_window.add_child(
         builder,
         tauri::LogicalPosition::new(x, y),
         tauri::LogicalSize::new(tab_width, tab_height),
@@ -2115,6 +2275,10 @@ pub fn run() {
                  if let Ok(parsed_url) = url.parse() {
                      let app_handle = app.handle().clone();
                      let label_clone = label.clone();
+                     
+                     let invoke_key = app.handle().invoke_key();
+                     let pwa_script = get_pwa_init_script(&label, &invoke_key);
+
                      let mut builder = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(parsed_url))
                         .title("PWA");
 
@@ -2134,7 +2298,8 @@ pub fn run() {
                      let _ = builder.inner_size(1024.0, 768.0)
                         .decorations(true)
                         .focused(true)
-                        .initialization_script(get_lumina_stealth_script())
+                        .initialization_script(&get_lumina_stealth_script())
+                        .initialization_script(&pwa_script)
                         .on_web_resource_request(move |request, response| {
                             let referer = request.headers().get("referer").and_then(|h| h.to_str().ok());
                             if check_adblock_url(&request.uri().to_string(), referer, &label_clone, &app_handle) {
