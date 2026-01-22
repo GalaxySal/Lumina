@@ -4,28 +4,28 @@ Lumina is a modern, high-performance web browser built with **Tauri v2** and **B
 
 ## 🌟 Features
 
-*   **⚡ Blazing Fast:** Powered by Rust and WebView2/WebKit.
-*   **🛡️ Secure Sandbox:** Strong isolation for browsing contexts.
-*   **⌨️ Command Palette:** (Alt+Space) Quick access to tabs, PWAs, and commands with a beautiful glassmorphism UI.
-*   **🔦 Flash Tab:** A floating overlay for quick lookups without leaving your current context.
-*   **🔄 Quick-Switch:** Seamlessly switch between active Progressive Web Apps (PWAs).
-*   **🛠️ Native IPC:** Optimized Inter-Process Communication bypassing standard CSP restrictions for superior performance.
-*   **🎨 Glassmorphism UI:** Modern, translucent visual effects with GPU acceleration.
+* **⚡ Blazing Fast:** Powered by Rust and WebView2/WebKit.
+* **🛡️ Secure Sandbox:** Strong isolation for browsing contexts.
+* **⌨️ Command Palette:** (Alt+Space) Quick access to tabs, PWAs, and commands with a beautiful glassmorphism UI.
+* **🔦 Flash Tab:** A floating overlay for quick lookups without leaving your current context.
+* **🔄 Quick-Switch:** Seamlessly switch between active Progressive Web Apps (PWAs).
+* **🛠️ Native IPC:** Optimized Inter-Process Communication bypassing standard CSP restrictions for superior performance.
+* **🎨 Glassmorphism UI:** Modern, translucent visual effects with GPU acceleration.
 
 ## 🛠️ Tech Stack
 
-*   **Backend:** Rust (Tauri v2)
-*   **Frontend:** Blazor WebAssembly (C# / .NET)
-*   **UI:** HTML/CSS (Glassmorphism effects)
+* **Backend:** Rust (Tauri v2)
+* **Frontend:** Blazor WebAssembly (C# / .NET)
+* **UI:** HTML/CSS (Glassmorphism effects)
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-*   Rust (latest stable)
-*   Node.js (for frontend assets if applicable)
-*   .NET SDK (for Blazor)
-*   Tauri CLI (`cargo install tauri-cli`)
+* Rust (latest stable)
+* Node.js (for frontend assets if applicable)
+* .NET SDK (for Blazor)
+* Tauri CLI (`cargo install tauri-cli`)
 
 ### Development
 
@@ -51,4 +51,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👤 Author
 
-**Nazim**
+* Nazim
