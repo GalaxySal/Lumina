@@ -907,7 +907,7 @@ async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url
 
     // Inject PWA script for handling window.open and context menu
     let invoke_key = app.invoke_key();
-    let script = get_pwa_init_script(&label, &invoke_key);
+    let script = get_pwa_init_script(&label, invoke_key);
 
     let mut builder = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?))
         .title(&title)
@@ -2277,7 +2277,7 @@ pub fn run() {
                      let label_clone = label.clone();
                      
                      let invoke_key = app.handle().invoke_key();
-                     let pwa_script = get_pwa_init_script(&label, &invoke_key);
+                     let pwa_script = get_pwa_init_script(&label, invoke_key);
 
                      let mut builder = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(parsed_url))
                         .title("PWA");
@@ -2298,7 +2298,7 @@ pub fn run() {
                      let _ = builder.inner_size(1024.0, 768.0)
                         .decorations(true)
                         .focused(true)
-                        .initialization_script(&get_lumina_stealth_script())
+                        .initialization_script(get_lumina_stealth_script())
                         .initialization_script(&pwa_script)
                         .on_web_resource_request(move |request, response| {
                             let referer = request.headers().get("referer").and_then(|h| h.to_str().ok());
