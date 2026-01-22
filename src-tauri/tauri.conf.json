@@ -30,6 +30,7 @@
       "msi",
       "app",
       "deb",
+      "rpm",
       "appimage",
       "dmg"
     ],
