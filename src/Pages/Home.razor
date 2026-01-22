@@ -349,7 +349,7 @@
             {
                 Suggestions = await JsRuntime.InvokeAsync<List<HistoryItem>>("__TAURI__.core.invoke", "search_history", new { query = CurrentUrl });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // Console.WriteLine($"Error fetching suggestions: {ex.Message}");
                 Suggestions.Clear();
