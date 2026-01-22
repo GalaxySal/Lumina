@@ -101,14 +101,14 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
-          $src = "src-tauri/target/release/Lumina.exe"
+          $src = "src-tauri/target/release/lumina-browser.exe"
           if (!(Test-Path $src)) {
-              Write-Host "Lumina.exe not found at standard path. Searching..."
-              $found = Get-ChildItem -Path "src-tauri/target" -Filter "Lumina.exe" -Recurse | Select-Object -First 1
+              Write-Host "lumina-browser.exe not found at standard path. Searching..."
+              $found = Get-ChildItem -Path "src-tauri/target" -Filter "lumina-browser.exe" -Recurse | Select-Object -First 1
               if ($found) {
                   $src = $found.FullName
               } else {
-                  Write-Error "Could not find Lumina.exe in src-tauri/target"
+                  Write-Error "Could not find lumina-browser.exe in src-tauri/target"
                   Get-ChildItem -Path "src-tauri/target" -Recurse
                   exit 1
               }
