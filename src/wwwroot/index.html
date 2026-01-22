@@ -84,6 +84,12 @@
                     // console.log("Adblock stats:", event);
                     dotNetRef.invokeMethodAsync('OnAdblockStatsUpdate', event.payload);
                 });
+
+                await window.__TAURI__.event.listen('toggle-command-palette', (event) => {
+                     if (window.commandPaletteRef) {
+                         window.commandPaletteRef.invokeMethodAsync('Toggle');
+                     }
+                });
             } else {
                 console.warn("Tauri event API not found");
             }

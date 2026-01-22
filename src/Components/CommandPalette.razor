@@ -1,3 +1,4 @@
+@implements IDisposable
 @inject IJSRuntime JsRuntime
 @using System.Text.RegularExpressions
 
@@ -265,9 +266,25 @@
     [Parameter] public EventCallback<string> OnNavigate { get; set; }
     [Parameter] public uint BlockedAdsCount { get; set; } = 0;
     
+    private DotNetObjectReference<CommandPalette>? objRef;
     private bool IsVisible = false;
     private string SearchQuery = "";
     private int SelectedIndex = 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            objRef = DotNetObjectReference.Create(this);
+            await JsRuntime.InvokeVoidAsync("registerCommandPaletteShortcut", objRef);
+        }
+    }
+
+    public void Dispose()
+    {
+        objRef?.Dispose();
+    }
+
     private ElementReference inputElement;
     private List<WindowInfo> OpenWindows = new();
     private List<WindowInfo> FilteredWindows = new();

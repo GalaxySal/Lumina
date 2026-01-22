@@ -2207,7 +2207,9 @@ pub fn run() {
                 if event.state() == ShortcutState::Pressed && shortcut.matches(Modifiers::CONTROL, Code::Space) {
                     if let Some(window) = app.get_webview_window("main") {
                         if window.is_visible().unwrap_or(false) {
-                            let _ = window.hide();
+                            // If window is visible, we toggle the command palette UI instead of hiding the window
+                            let _ = window.emit("toggle-command-palette", ());
+                            let _ = window.set_focus();
                         } else {
                             let _ = window.show();
                             let _ = window.set_focus();
