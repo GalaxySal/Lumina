@@ -140,7 +140,7 @@
                 try {
                     const url = new URL(targetUrl);
                     if (url.protocol === 'http:' || url.protocol === 'https:') {
-                        window.location.href = targetUrl;
+                        window.location.href = url.href;
                         return;
                     }
                 } catch (e) {
