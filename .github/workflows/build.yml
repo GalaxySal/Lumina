@@ -43,7 +43,7 @@ jobs:
       - name: Get Version
         shell: bash
         run: |
-          VERSION=$(grep -oP '"version":\s*"\K[^"]+' src-tauri/tauri.conf.json)
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
           echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Generate Release Notes
