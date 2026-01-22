@@ -109,7 +109,26 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
-          Copy-Item "src-tauri/target/release/Lumina.exe" -Destination "src-tauri/target/release/Lumina-Portable.exe"
+          # Tauri 2.0 output structure might be different or action cleans up
+          # Check for exe in common locations
+          $src = "src-tauri/target/release/Lumina.exe"
+          if (!(Test-Path $src)) {
+             $src = "src-tauri/target/release/bundle/nsis/Lumina.exe"
+          }
+          if (!(Test-Path $src)) {
+             # Try to find it recursively if not in standard paths
+             $found = Get-ChildItem -Path "src-tauri/target" -Filter "Lumina.exe" -Recurse | Select-Object -First 1
+             if ($found) {
+                $src = $found.FullName
+             } else {
+                Write-Error "Could not find Lumina.exe in target directory"
+                Get-ChildItem -Path "src-tauri/target" -Recurse
+                exit 1
+             }
+          }
+          
+          Write-Host "Found exe at: $src"
+          Copy-Item $src -Destination "src-tauri/target/release/Lumina-Portable.exe"
         
       - name: Upload Portable Asset
         if: matrix.platform == 'windows-latest'
