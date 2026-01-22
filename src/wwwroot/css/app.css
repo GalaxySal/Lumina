@@ -394,7 +394,7 @@ body {
     top: var(--header-height);
     right: 0;
     bottom: 0;
-    width: 320px;
+    width: 20rem; /* Responsive width */
     background: var(--menu-bg); /* Use theme variable */
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
@@ -418,7 +418,7 @@ body {
 
 .menu-tab {
     flex: 1;
-    padding: 12px;
+    padding: 0.75rem;
     border: none;
     background: transparent;
     cursor: pointer;
@@ -459,7 +459,7 @@ body {
 
 .item-title {
     font-weight: 500;
-    font-size: 14px;
+    font-size: 0.875rem;
     margin-bottom: 2px;
     white-space: nowrap;
     overflow: hidden;
@@ -467,7 +467,7 @@ body {
 }
 
 .item-url {
-    font-size: 12px;
+    font-size: 0.75rem;
     color: var(--tab-text);
     white-space: nowrap;
     overflow: hidden;
