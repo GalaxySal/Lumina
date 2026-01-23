@@ -14,6 +14,15 @@ if (-not (Test-Path $ReleaseDir)) {
     Write-Host "📁 Created Release directory: $ReleaseDir" -ForegroundColor Green
 }
 
+# Build Sidecars
+Write-Host "🔧 Building Sidecars..." -ForegroundColor Yellow
+$BuildSidecarsScript = Join-Path $ScriptDir "scripts\build-sidecars.ps1"
+if (Test-Path $BuildSidecarsScript) {
+    & $BuildSidecarsScript
+} else {
+    Write-Warning "Sidecar build script not found at $BuildSidecarsScript"
+}
+
 # Navigate to src-tauri
 Push-Location $TauriDir
 
