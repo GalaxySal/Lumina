@@ -503,6 +503,10 @@
     {
         await LoadSettings();
         
+        // Auto-start/check Go Network Sidecar
+        // This ensures the sidecar is working immediately upon browser launch
+        _ = RunNetworkCommand("status", "{}");
+
         try
         {
              var downloads = await JsRuntime.InvokeAsync<List<DownloadItem>>("__TAURI__.core.invoke", "get_downloads");
@@ -1026,6 +1030,17 @@
 
         string targetUrl = CurrentUrl.Trim();
         
+        // Internal Pages Interception
+        if (targetUrl.StartsWith("lumina://", StringComparison.OrdinalIgnoreCase))
+        {
+            var page = targetUrl.Substring(9).ToLower();
+            if (page == "downloads") { IsMenuOpen = true; MenuTab = "downloads"; StateHasChanged(); return; }
+            if (page == "history") { IsMenuOpen = true; MenuTab = "history"; StateHasChanged(); return; }
+            if (page == "settings") { IsMenuOpen = true; MenuTab = "settings"; StateHasChanged(); return; }
+            if (page == "favorites") { IsMenuOpen = true; MenuTab = "favorites"; StateHasChanged(); return; }
+            if (page == "network") { IsMenuOpen = true; MenuTab = "network"; StateHasChanged(); return; }
+        }
+        
         // Basic Smart Search / Omnibox Logic
         bool isUrl = false;
         
@@ -1189,5 +1204,39 @@
                await SearchHistory(CurrentUrl);
             }
         }
+    }
+
+    // Network Sidecar Logic
+    private string NetworkStatus = "Ready";
+    private List<string> NetworkLogs = new();
+
+    private async Task RunNetworkCommand(string command, string payloadJson)
+    {
+        NetworkLogs.Add($"Sending: {command} {payloadJson}");
+        try
+        {
+             var response = await JsRuntime.InvokeAsync<string>("__TAURI__.core.invoke", "run_networking_command", 
+                new { command = command, payload = payloadJson });
+             
+             NetworkLogs.Add($"Response: {response}");
+             
+             // Update status if it's a status command
+             if (command == "status")
+             {
+                 try {
+                    using var doc = System.Text.Json.JsonDocument.Parse(response);
+                    if (doc.RootElement.TryGetProperty("status", out var statusProp))
+                    {
+                        NetworkStatus = statusProp.GetString() ?? "Unknown";
+                    }
+                 } catch {}
+             }
+        }
+        catch (Exception ex)
+        {
+             NetworkLogs.Add($"Error: {ex.Message}");
+             NetworkStatus = "Error";
+        }
+        StateHasChanged();
     }
 }
