@@ -14,7 +14,7 @@ fn main() {
     // Attempt to build Zig project
     if zig_dir.exists() {
         let status = Command::new("zig")
-            .args(&["build", "-Doptimize=ReleaseFast"])
+            .args(["build", "-Doptimize=ReleaseFast"])
             .current_dir(&zig_dir)
             .status();
 
