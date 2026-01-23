@@ -4,8 +4,32 @@
   "description": "Capability for the main window",
   "windows": ["main", "tab-*", "pwa-*", "flash-*"],
   "permissions": [
-    "core:default",
+    "core:app:default",
+    "core:window:default",
+    "core:webview:default",
+    "core:event:default",
+    "core:image:default",
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
     "opener:default",
-    "global-shortcut:default"
+    "global-shortcut:default",
+    "shell:allow-execute",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/kip-lang",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "binaries/lumina-net",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
+    "deep-link:default"
   ]
 }

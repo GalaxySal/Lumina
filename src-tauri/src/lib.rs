@@ -18,6 +18,11 @@ use base64::Engine as _;
 static ADBLOCK_ENGINE: OnceLock<Arc<Mutex<Engine>>> = OnceLock::new();
 static ADBLOCK_STATS: OnceLock<Arc<Mutex<HashMap<String, u32>>>> = OnceLock::new();
 
+#[cfg(zig_enabled)]
+extern "C" {
+    fn lumina_init_security();
+}
+
 #[derive(Clone, serde::Serialize)]
 struct AdblockStatsPayload {
     label: String,
@@ -357,11 +362,11 @@ fn open_file(_path: String) {
 }
 
 #[tauri::command]
-fn show_in_folder(_path: String) {
+fn show_in_folder(path: String) {
     #[cfg(target_os = "windows")]
     {
         let _ = std::process::Command::new("explorer")
-            .args(["/select,", &_path])
+            .args(["/select,", &path])
             .spawn();
     }
 }
@@ -2195,13 +2200,102 @@ async fn check_pwa_manifest(app: AppHandle, state: tauri::State<'_, PwaState>, l
     Ok(())
 }
 
+#[tauri::command]
+async fn run_kip_code(app: tauri::AppHandle, code: String) -> Result<String, String> {
+    use tauri_plugin_shell::ShellExt;
+    use tauri_plugin_shell::process::CommandEvent;
+
+    let sidecar = app.shell().sidecar("kip-lang")
+        .map_err(|e| e.to_string())?;
+
+    let (mut rx, mut child) = sidecar
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    // Send code + exit command to ensure the sidecar processes and terminates
+    let input = format!("{}\nexit\n", code);
+    child.write(input.as_bytes()).map_err(|e| e.to_string())?;
+
+    let mut output = String::new();
+    while let Some(event) = rx.recv().await {
+        match event {
+            CommandEvent::Stdout(line) => {
+                let text = String::from_utf8_lossy(&line);
+                output.push_str(&text);
+            }
+            CommandEvent::Stderr(line) => {
+                let text = String::from_utf8_lossy(&line);
+                println!("Kip Stderr: {}", text);
+            }
+            CommandEvent::Terminated(_) => {
+                break;
+            }
+            _ => {}
+        }
+    }
+    
+    Ok(output)
+}
+
+#[tauri::command]
+async fn run_networking_command(app: tauri::AppHandle, command: String, payload: String) -> Result<String, String> {
+    use tauri_plugin_shell::ShellExt;
+    use tauri_plugin_shell::process::CommandEvent;
+
+    let sidecar = app.shell().sidecar("lumina-net")
+        .map_err(|e| e.to_string())?;
+
+    let (mut rx, mut child) = sidecar
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    // Parse payload to ensure it's valid JSON, or pass as null if empty
+    let payload_json: serde_json::Value = serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null);
+
+    let request = serde_json::json!({
+        "command": command,
+        "payload": payload_json
+    });
+    
+    let input = format!("{}\n", request.to_string());
+    child.write(input.as_bytes()).map_err(|e| e.to_string())?;
+    
+    let mut response = String::new();
+    
+    // Read response
+    while let Some(event) = rx.recv().await {
+         match event {
+            CommandEvent::Stdout(line) => {
+                let text = String::from_utf8_lossy(&line);
+                response.push_str(&text);
+                // In this simple one-shot mode, we assume one line response
+                if response.trim().ends_with("}") {
+                    break;
+                }
+            }
+            CommandEvent::Stderr(line) => {
+                 let text = String::from_utf8_lossy(&line);
+                 println!("Lumina-Net Stderr: {}", text);
+            }
+             _ => {}
+         }
+    }
+    
+    // Clean up
+    let _ = child.kill();
+
+    Ok(response)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
     std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| {
                 if event.state() == ShortcutState::Pressed && shortcut.matches(Modifiers::CONTROL, Code::Space) {
@@ -2218,6 +2312,321 @@ pub fn run() {
                 }
             }).build()
         )
+        .register_uri_scheme_protocol("lumina", move |ctx, request| {
+            let uri = request.uri().to_string();
+            let path = uri.replace("lumina://", "");
+            let path = path.trim_end_matches('/');
+
+            match path {
+                "downloads" => {
+                    let manager = ctx.app_handle().state::<DownloadManager>();
+                    let downloads = manager.downloads.lock().unwrap();
+                    
+                    let mut items_html = String::new();
+                    let items: Vec<&DownloadItem> = downloads.values().collect();
+                    
+                    for item in items {
+                        let status_class = match item.status.as_str() {
+                            "completed" => "completed",
+                            "failed" => "failed",
+                            _ => "downloading"
+                        };
+                        
+                        items_html.push_str(&format!(
+                            r#"<div class="item">
+                                <div class="info">
+                                    <div class="filename">{}</div>
+                                    <div class="url">{}</div>
+                                </div>
+                                <div class="status {}">{}</div>
+                                <div class="actions">
+                                    <button onclick="window.__TAURI__.core.invoke('show_in_folder', {{ path: '{}' }})">Show in Folder</button>
+                                </div>
+                            </div>"#,
+                            item.file_name, item.url, status_class, item.status, item.path.replace("\\", "\\\\")
+                        ));
+                    }
+
+                    if items_html.is_empty() {
+                        items_html = r#"<div style="text-align: center; color: #6b7280; padding: 40px;">No downloads yet</div>"#.to_string();
+                    }
+
+                    let html = format!(
+                        r#"<!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>Downloads</title>
+                            <style>
+                                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
+                                h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }}
+                                .item {{ background: white; padding: 20px; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; }}
+                                .info {{ flex: 1; overflow: hidden; }}
+                                .filename {{ font-weight: 600; font-size: 1.1em; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+                                .url {{ color: #6b7280; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+                                .status {{ margin-left: 20px; font-size: 0.9em; font-weight: 500; text-transform: capitalize; min-width: 80px; text-align: right; }}
+                                .status.completed {{ color: #059669; }}
+                                .status.failed {{ color: #dc2626; }}
+                                .status.downloading {{ color: #2563eb; }}
+                                .actions {{ margin-left: 20px; }}
+                                .actions button {{ padding: 8px 16px; cursor: pointer; border: 1px solid #d1d5db; background: white; border-radius: 6px; font-size: 0.9em; transition: all 0.2s; }}
+                                .actions button:hover {{ background: #f3f4f6; border-color: #9ca3af; }}
+                            </style>
+                        </head>
+                        <body>
+                            <h1>Downloads</h1>
+                            <div id="list">
+                                {}
+                            </div>
+                        </body>
+                        </html>"#,
+                        items_html
+                    );
+
+                    tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", "text/html")
+                        .body(html.into_bytes())
+                        .unwrap()
+                },
+                "history" => {
+                    let state = ctx.app_handle().state::<AppDataStore>();
+                    let data = state.data.lock().unwrap();
+                    let history = &data.history;
+                    
+                    let mut items_html = String::new();
+                    for item in history {
+                        let date = chrono::DateTime::<chrono::Utc>::from_timestamp(item.timestamp, 0)
+                            .unwrap_or_default()
+                            .format("%Y-%m-%d %H:%M");
+                            
+                        items_html.push_str(&format!(
+                            r#"<div class="item">
+                                <div class="info">
+                                    <div class="filename">{}</div>
+                                    <div class="url"><a href="{}">{}</a></div>
+                                </div>
+                                <div class="status">{}</div>
+                            </div>"#,
+                            item.title, item.url, item.url, date
+                        ));
+                    }
+                    
+                    if items_html.is_empty() {
+                         items_html = r#"<div style="text-align: center; color: #6b7280; padding: 40px;">No history yet</div>"#.to_string();
+                    }
+                    
+                    let html = format!(
+                        r#"<!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>History</title>
+                            <style>
+                                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
+                                h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }}
+                                .item {{ background: white; padding: 20px; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; }}
+                                .info {{ flex: 1; overflow: hidden; }}
+                                .filename {{ font-weight: 600; font-size: 1.1em; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+                                .url a {{ color: #6b7280; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }}
+                                .url a:hover {{ text-decoration: underline; color: #2563eb; }}
+                                .status {{ margin-left: 20px; font-size: 0.9em; color: #9ca3af; min-width: 120px; text-align: right; }}
+                            </style>
+                        </head>
+                        <body>
+                            <h1>History</h1>
+                            <div id="list">
+                                {}
+                            </div>
+                        </body>
+                        </html>"#,
+                        items_html
+                    );
+                    
+                    tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", "text/html")
+                        .body(html.into_bytes())
+                        .unwrap()
+                },
+                "favorites" | "bookmarks" => {
+                    let state = ctx.app_handle().state::<AppDataStore>();
+                    let data = state.data.lock().unwrap();
+                    let favorites = &data.favorites;
+                    
+                    let mut items_html = String::new();
+                    for item in favorites {
+                        items_html.push_str(&format!(
+                            r#"<div class="item">
+                                <div class="info">
+                                    <div class="filename">{}</div>
+                                    <div class="url"><a href="{}">{}</a></div>
+                                </div>
+                                <div class="actions">
+                                    <button onclick="window.__TAURI__.core.invoke('remove_favorite', {{ url: '{}' }}).then(() => window.location.reload())">Remove</button>
+                                </div>
+                            </div>"#,
+                            item.title, item.url, item.url, item.url
+                        ));
+                    }
+                    
+                    if items_html.is_empty() {
+                         items_html = r#"<div style="text-align: center; color: #6b7280; padding: 40px;">No favorites yet</div>"#.to_string();
+                    }
+                    
+                    let html = format!(
+                        r#"<!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>Favorites</title>
+                            <style>
+                                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
+                                h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }}
+                                .item {{ background: white; padding: 20px; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; }}
+                                .info {{ flex: 1; overflow: hidden; }}
+                                .filename {{ font-weight: 600; font-size: 1.1em; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+                                .url a {{ color: #6b7280; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }}
+                                .url a:hover {{ text-decoration: underline; color: #2563eb; }}
+                                .actions {{ margin-left: 20px; }}
+                                .actions button {{ padding: 8px 16px; cursor: pointer; border: 1px solid #d1d5db; background: white; border-radius: 6px; font-size: 0.9em; transition: all 0.2s; color: #dc2626; }}
+                                .actions button:hover {{ background: #fef2f2; border-color: #fca5a5; }}
+                            </style>
+                        </head>
+                        <body>
+                            <h1>Favorites</h1>
+                            <div id="list">
+                                {}
+                            </div>
+                        </body>
+                        </html>"#,
+                        items_html
+                    );
+                    
+                    tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", "text/html")
+                        .body(html.into_bytes())
+                        .unwrap()
+                },
+                "settings" => {
+                    let state = ctx.app_handle().state::<AppDataStore>();
+                    let data = state.data.lock().unwrap();
+                    let settings = &data.settings;
+                    
+                    let html = format!(
+                        r#"<!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>Settings</title>
+                            <style>
+                                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 600px; margin: 0 auto; }}
+                                h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }}
+                                .group {{ background: white; padding: 25px; margin-bottom: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+                                .form-group {{ margin-bottom: 20px; }}
+                                .form-group:last-child {{ margin-bottom: 0; }}
+                                label {{ display: block; margin-bottom: 8px; font-weight: 500; font-size: 0.95em; color: #374151; }}
+                                input[type="text"], select {{ width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1em; box-sizing: border-box; transition: border-color 0.2s; }}
+                                input[type="text"]:focus, select:focus {{ outline: none; border-color: #2563eb; ring: 2px solid #bfdbfe; }}
+                                .checkbox-group {{ display: flex; align-items: center; }}
+                                input[type="checkbox"] {{ width: 18px; height: 18px; margin-right: 10px; }}
+                                button {{ background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1em; font-weight: 500; cursor: pointer; transition: background 0.2s; width: 100%; margin-top: 10px; }}
+                                button:hover {{ background: #1d4ed8; }}
+                            </style>
+                        </head>
+                        <body>
+                            <h1>Settings</h1>
+                            <div class="group">
+                                <div class="form-group">
+                                    <label>Homepage URL</label>
+                                    <input type="text" id="homepage" value="{}">
+                                </div>
+                                <div class="form-group">
+                                    <label>Search Engine</label>
+                                    <select id="search_engine">
+                                        <option value="google" {}>Google</option>
+                                        <option value="bing" {}>Bing</option>
+                                        <option value="duckduckgo" {}>DuckDuckGo</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="group">
+                                <div class="form-group">
+                                    <label>Theme</label>
+                                    <select id="theme">
+                                        <option value="dark" {}>Dark</option>
+                                        <option value="light" {}>Light</option>
+                                        <option value="system" {}>System</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Accent Color</label>
+                                    <input type="text" id="accent_color" value="{}">
+                                </div>
+                            </div>
+
+                            <div class="group">
+                                <div class="form-group checkbox-group">
+                                    <input type="checkbox" id="vertical_tabs" {}>
+                                    <label for="vertical_tabs" style="margin-bottom: 0">Vertical Tabs</label>
+                                </div>
+                                <div class="form-group checkbox-group">
+                                    <input type="checkbox" id="rounded_corners" {}>
+                                    <label for="rounded_corners" style="margin-bottom: 0">Rounded Corners</label>
+                                </div>
+                            </div>
+
+                            <button onclick="save()">Save Settings</button>
+
+                            <script>
+                                function save() {{
+                                    const homepage = document.getElementById('homepage').value;
+                                    const search_engine = document.getElementById('search_engine').value;
+                                    const theme = document.getElementById('theme').value;
+                                    const accent_color = document.getElementById('accent_color').value;
+                                    const vertical_tabs = document.getElementById('vertical_tabs').checked;
+                                    const rounded_corners = document.getElementById('rounded_corners').checked;
+
+                                    window.__TAURI__.core.invoke('save_settings', {{
+                                        homepage, 
+                                        searchEngine: search_engine, 
+                                        theme, 
+                                        accentColor: accent_color, 
+                                        verticalTabs: vertical_tabs, 
+                                        roundedCorners: rounded_corners
+                                    }}).then(() => {{
+                                        alert('Settings saved!');
+                                    }}).catch(e => {{
+                                        alert('Error saving settings: ' + e);
+                                    }});
+                                }}
+                            </script>
+                        </body>
+                        </html>"#,
+                        settings.homepage,
+                        if settings.search_engine == "google" { "selected" } else { "" },
+                        if settings.search_engine == "bing" { "selected" } else { "" },
+                        if settings.search_engine == "duckduckgo" { "selected" } else { "" },
+                        if settings.theme == "dark" { "selected" } else { "" },
+                        if settings.theme == "light" { "selected" } else { "" },
+                        if settings.theme == "system" { "selected" } else { "" },
+                        settings.accent_color,
+                        if settings.vertical_tabs { "checked" } else { "" },
+                        if settings.rounded_corners { "checked" } else { "" }
+                    );
+                    
+                    tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", "text/html")
+                        .body(html.into_bytes())
+                        .unwrap()
+                },
+                _ => {
+                    tauri::http::Response::builder()
+                        .status(404)
+                        .body("Not Found".as_bytes().to_vec())
+                        .unwrap()
+                }
+            }
+        })
         .manage(UiState { 
             sidebar_open: std::sync::atomic::AtomicBool::new(false),
             suggestions_height: std::sync::atomic::AtomicU32::new(0),
@@ -2225,6 +2634,20 @@ pub fn run() {
         })
         .manage(PwaState { icons: std::sync::Mutex::new(std::collections::HashMap::new()) })
         .setup(|app| {
+            // Initialize Zig Security Layer
+            #[cfg(zig_enabled)]
+            unsafe {
+                lumina_init_security();
+                println!("Lumina Security Layer (Zig) initialized.");
+            }
+
+            // Deep Link Registration
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = app.deep_link().register_all();
+            }
+
             // Register Global Shortcut
             #[cfg(desktop)]
             {
@@ -2441,7 +2864,9 @@ pub fn run() {
             get_open_windows,
             focus_window,
             open_flash_window,
-            clean_page
+            clean_page,
+            run_kip_code,
+            run_networking_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

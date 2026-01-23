@@ -26,6 +26,45 @@ jobs:
         with:
           dotnet-version: '8.0.x' 
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Determine Sidecar Target
+        shell: bash
+        run: |
+          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+            echo "SIDECAR_TRIPLE=x86_64-pc-windows-msvc" >> $GITHUB_ENV
+            echo "EXE_EXT=.exe" >> $GITHUB_ENV
+          elif [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            if [[ $(uname -m) == "arm64" ]]; then
+               echo "SIDECAR_TRIPLE=aarch64-apple-darwin" >> $GITHUB_ENV
+            else
+               echo "SIDECAR_TRIPLE=x86_64-apple-darwin" >> $GITHUB_ENV
+            fi
+            echo "EXE_EXT=" >> $GITHUB_ENV
+          else
+            echo "SIDECAR_TRIPLE=x86_64-unknown-linux-gnu" >> $GITHUB_ENV
+            echo "EXE_EXT=" >> $GITHUB_ENV
+          fi
+
+      - name: Build Sidecars
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          
+          # Build Kip (Rust)
+          echo "Building Kip..."
+          cargo build --release --manifest-path src-kip/Cargo.toml
+          cp src-kip/target/release/kip-rs${{ env.EXE_EXT }} src-tauri/binaries/kip-lang-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
+          
+          # Build Lumina-Net (Go)
+          echo "Building Lumina-Net..."
+          cd src-go
+          go build -o ../src-tauri/binaries/lumina-net-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }} main.go
+          cd .. 
+
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |

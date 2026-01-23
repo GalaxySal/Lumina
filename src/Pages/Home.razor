@@ -1030,12 +1030,13 @@
         bool isUrl = false;
         
         // Check for protocol
-        if (targetUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
-            targetUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
-            targetUrl.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
-        {
-            isUrl = true;
-        }
+            if (targetUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
+                targetUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                targetUrl.StartsWith("file://", StringComparison.OrdinalIgnoreCase) ||
+                targetUrl.StartsWith("lumina://", StringComparison.OrdinalIgnoreCase))
+            {
+                isUrl = true;
+            }
         else
         {
             // Regex to check if it looks like a domain (e.g., example.com, sub.domain.org)

@@ -1,6 +1,6 @@
 [package]
 name = "lumina-browser"
-version = "0.2.6"
+version = "0.3.0"
 description = "A next-generation browser built with Tauri and Blazor"
 authors = ["Nazim"]
 edition = "2021"
@@ -33,4 +33,6 @@ adblock = { version = "0.12.1", default-features = false, features = ["full-rege
 tauri-plugin-global-shortcut = "2.3.1"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
 base64 = "0.22.1"
+tauri-plugin-deep-link = "2.4.6"
+tauri-plugin-shell = "2.3.4"
 
