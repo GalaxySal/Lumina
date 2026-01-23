@@ -158,6 +158,12 @@
                     </svg>
                     <span>Settings</span>
                 </button>
+                <button class="menu-tab @(MenuTab == "networking" ? "active" : "")" @onclick="@(() => MenuTab = "networking")">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 20px; height: 20px;">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12h1.5m-1.5 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z" />
+                    </svg>
+                    <span>Network</span>
+                </button>
             </div>
             <div class="menu-content">
                 @if (MenuTab == "history")
@@ -281,6 +287,42 @@
                         </div>
 
                         <button class="save-btn" @onclick="SaveSettings">Save & Apply</button>
+                    </div>
+                }
+                else if (MenuTab == "networking")
+                {
+                    <div class="networking-panel" style="padding: 20px;">
+                        <h3>Go Sidecar Control</h3>
+                        <div class="status-indicator" style="margin-bottom: 15px; padding: 10px; background: rgba(0,0,0,0.1); border-radius: 8px;">
+                            <strong>Status:</strong> @NetworkStatus
+                        </div>
+                        
+                        <div class="control-group" style="display: flex; gap: 10px; margin-bottom: 20px;">
+                            <button class="nav-btn" style="width: auto; padding: 8px 16px;" @onclick='() => RunNetworkCommand("ping", "{}")'>Ping</button>
+                            <button class="nav-btn" style="width: auto; padding: 8px 16px;" @onclick='() => RunNetworkCommand("status", "{}")'>Check Status</button>
+                        </div>
+                        
+                        <h3>Server Configuration</h3>
+                        <div class="form-group" style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 5px;">Port</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="number" class="form-control" @bind="NetworkPort" style="width: 100px;" />
+                                <button class="nav-btn" style="width: auto; padding: 8px 16px; background-color: var(--accent-color); color: white;" @onclick="StartServer">Start Server</button>
+                                <button class="nav-btn" style="width: auto; padding: 8px 16px; background-color: #ef4444; color: white;" @onclick="StopServer">Stop</button>
+                            </div>
+                        </div>
+
+                        <h3>Logs</h3>
+                        <div class="logs" style="background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 8px; font-family: monospace; height: 200px; overflow-y: auto; font-size: 12px;">
+                            @if (!NetworkLogs.Any())
+                            {
+                                <div style="color: #666;">No logs yet...</div>
+                            }
+                            @foreach(var log in NetworkLogs)
+                            {
+                                <div class="log-entry" style="border-bottom: 1px solid #333; padding: 2px 0;">@log</div>
+                            }
+                        </div>
                     </div>
                 }
             </div>
@@ -1209,6 +1251,18 @@
     // Network Sidecar Logic
     private string NetworkStatus = "Ready";
     private List<string> NetworkLogs = new();
+    private int NetworkPort = 8080;
+
+    private async Task StartServer()
+    {
+        var payload = System.Text.Json.JsonSerializer.Serialize(new { port = NetworkPort, type = "tcp" });
+        await RunNetworkCommand("start_server", payload);
+    }
+
+    private async Task StopServer()
+    {
+        await RunNetworkCommand("stop_server", "{}");
+    }
 
     private async Task RunNetworkCommand(string command, string payloadJson)
     {

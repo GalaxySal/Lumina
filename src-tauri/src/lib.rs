@@ -369,6 +369,8 @@ fn show_in_folder(path: String) {
             .args(["/select,", &path])
             .spawn();
     }
+    #[cfg(not(target_os = "windows"))]
+    let _ = path;
 }
 
 #[tauri::command]
@@ -2257,7 +2259,7 @@ async fn run_networking_command(app: tauri::AppHandle, command: String, payload:
         "payload": payload_json
     });
     
-    let input = format!("{}\n", request.to_string());
+    let input = format!("{}\n", request);
     child.write(input.as_bytes()).map_err(|e| e.to_string())?;
     
     let mut response = String::new();
