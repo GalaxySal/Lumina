@@ -2,7 +2,7 @@ mod data;
 mod history_manager;
 use history_manager::HistoryManager;
 use data::{AppDataStore, HistoryItem, FavoriteItem, AppSettings};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewBuilder, Emitter, Listener, Url};
+use tauri::{AppHandle, Manager, WebviewUrl, Emitter, Listener, Url};
 use futures_util::StreamExt;
 use tokio::io::{AsyncWriteExt, AsyncSeekExt};
 use std::collections::HashMap;
@@ -72,10 +72,16 @@ fn check_adblock_url(url: &str, referer: Option<&str>, label: &str, app: &AppHan
                     if let Ok(mut stats) = stats_arc.lock() {
                         let count = stats.entry(label.to_string()).or_insert(0);
                         *count += 1;
-                        // Emit event to frontend
-                        let _ = app.emit("adblock-stats-update", AdblockStatsPayload {
-                            label: label.to_string(),
-                            blocked_count: *count,
+                        
+                        // Emit event to frontend (Spawned to avoid blocking the resource request thread)
+                        let app_emit = app.clone();
+                        let label_emit = label.to_string();
+                        let count_emit = *count;
+                        tauri::async_runtime::spawn(async move {
+                            let _ = app_emit.emit("adblock-stats-update", AdblockStatsPayload {
+                                label: label_emit,
+                                blocked_count: count_emit,
+                            });
                         });
                     }
                 }
@@ -93,9 +99,16 @@ fn check_adblock_url(url: &str, referer: Option<&str>, label: &str, app: &AppHan
             if let Ok(mut stats) = stats_arc.lock() {
                 let count = stats.entry(label.to_string()).or_insert(0);
                 *count += 1;
-                let _ = app.emit("adblock-stats-update", AdblockStatsPayload {
-                    label: label.to_string(),
-                    blocked_count: *count,
+                
+                // Emit event to frontend (Spawned)
+                let app_emit = app.clone();
+                let label_emit = label.to_string();
+                let count_emit = *count;
+                tauri::async_runtime::spawn(async move {
+                    let _ = app_emit.emit("adblock-stats-update", AdblockStatsPayload {
+                        label: label_emit,
+                        blocked_count: count_emit,
+                    });
                 });
             }
         }
@@ -173,7 +186,7 @@ impl DownloadManager {
 }
 
 async fn check_and_redirect(webview: tauri::Webview, url: String) {
-    if url.starts_with("tauri://") || url.starts_with("file://") || url.starts_with("about:") || url.starts_with("data:") {
+    if url.starts_with("tauri://") || url.starts_with("file://") || url.starts_with("about:") || url.starts_with("data:") || url.starts_with("lumina://") {
         return;
     }
 
@@ -213,11 +226,15 @@ fn greet(name: &str) -> String {
 
 #[tauri::command]
 fn navigate(app: AppHandle, label: String, url: String) {
-    println!("Rust: navigating tab {} to {}", label, url);
+    // println!("Rust: navigating tab {} to {}", label, url);
+    // Try to find the webview. If not found, it might be because it was JUST created and not yet in the map.
+    // In Tauri v2, add_child returns the webview instance.
+    // But navigate is a separate command called from JS, so it relies on AppHandle lookup.
+    
     if let Some(webview) = app.get_webview(&label) {
         let _ = webview.set_focus();
-        // Use eval for navigation as load_url is not available on Webview struct directly in this version
-        let _ = webview.eval(format!("window.location.assign('{}')", url));
+        // Use eval for navigation
+        let _ = webview.eval(&format!("window.location.assign('{}')", url));
         
         // Check connection
         let wv = webview.clone();
@@ -226,7 +243,16 @@ fn navigate(app: AppHandle, label: String, url: String) {
             check_and_redirect(wv, u).await;
         });
     } else {
-        println!("Rust: webview {} not found", label);
+        println!("Rust: webview {} not found via AppHandle lookup", label);
+        // Fallback: This is likely a race condition where create_tab succeeded but the webview isn't in the global map yet?
+        // Or maybe add_child failed silently? But we have logs for success/fail.
+        // Wait: The logs show "Attempting to add_child" but NOT "Rust: Tab ... created successfully" or "Error creating tab".
+        // This means add_child is HANGING or panicking silently!
+        
+        // println!("Rust: Available webviews:");
+        // for (l, _) in app.webviews() {
+        //     println!(" - {}", l);
+        // }
     }
 }
 
@@ -936,6 +962,7 @@ async fn open_pwa_window(app: AppHandle, url: String, title: String, favicon_url
     #[cfg(target_os = "windows")]
     {
         builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0");
+        builder = builder.additional_browser_args("--ignore-certificate-errors");
     }
     #[cfg(target_os = "linux")]
     {
@@ -1401,11 +1428,17 @@ struct UiState {
 
 #[tauri::command]
 async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store: tauri::State<'_, AppDataStore>, label: String, url: String, _window: tauri::Window) -> Result<(), String> {
-    // Ensure we are targeting the main window for the new tab, regardless of which window requested it.
-    let target_window = app.get_window("main").ok_or("Main window not found")?;
+    // println!("Rust: create_tab called for {} url: {}", label, url);
+
+    // Ensure we are targeting the main window for the new tab
+    let target_window = app.get_window("main").ok_or_else(|| {
+        println!("Rust: Main window 'main' not found!");
+        "Main window not found".to_string()
+    })?;
 
     if app.get_webview(&label).is_some() {
         // If tab already exists, just switch to it (optional logic)
+        println!("Rust: Tab {} already exists", label);
         return Ok(());
     }
 
@@ -1433,9 +1466,10 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
     let ad_block_script = get_lumina_stealth_script();
 
     // Attempt to get invoke key
-     let invoke_key = app.invoke_key();
+    println!("Rust: Getting invoke key for {}", label);
+    let invoke_key = app.invoke_key();
      
-     let info_script = format!(r#"
+    let info_script = format!(r#"
          (function() {{
              // Prevent execution in subframes (ads, tracking pixels) to stop IPC errors
              try {{
@@ -1792,11 +1826,13 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
     let app_clone_adblock = app.clone();
     let label_clone_adblock = label.clone();
 
-    let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(url_parsed));
-
+    // println!("Rust: Creating WebviewBuilder for {}", label);
+    let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(url_parsed));
+    
     #[cfg(target_os = "windows")]
     {
-        builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0");
+         builder = builder.additional_browser_args("--ignore-certificate-errors");
+         builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0");
     }
     #[cfg(target_os = "linux")]
     {
@@ -1839,7 +1875,7 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
         })
 
         .on_navigation(move |url: &Url| {
-            println!("Navigation: {} -> {}", label_clone, url);
+            // println!("Navigation: {} -> {}", label_clone, url);
             let _ = app_handle.emit("tab-navigation", TabNavigationPayload {
                 label: label_clone.clone(),
                 url: url.to_string(),
@@ -1860,42 +1896,66 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
             true
         });
     
-    let res = target_window.add_child(
-        builder,
-        tauri::LogicalPosition::new(x, y),
-        tauri::LogicalSize::new(tab_width, tab_height),
-    );
-    
+    // Use add_child to create the webview inside the existing window
+    // println!("Rust: Attempting to add_child for {}", label);
+    // Explicitly handle the Result immediately to catch panic or error
+     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+         // println!("Rust: Inside catch_unwind, calling add_child");
+         target_window.add_child(
+             builder,
+             tauri::LogicalPosition::new(x, y),
+             tauri::LogicalSize::new(tab_width, tab_height),
+         )
+     }));
+
     match res {
-        Ok(webview) => {
-            // New tab is created. 
-            
-            // Optimization: Hide previous tab immediately to prevent stacking/flicker
-            {
-                let mut current = state.current_tab.lock().unwrap();
-                if let Some(ref old_label) = *current {
-                     if let Some(old_webview) = app.get_webview(old_label) {
-                         let _ = old_webview.hide();
-                     }
+        Ok(inner_res) => {
+             match inner_res {
+                Ok(webview) => {
+                    // println!("Rust: Tab {} created successfully. Actual label: {}", label, webview.label());
+                    // Force tracking of the new webview
+                    // In Tauri v2, add_child might not immediately register the webview in the app handle's map
+                    // But the webview object returned is valid.
+                    
+                    // Position and size are already set by add_child
+
+                    // New tab is created. 
+                    
+                    // Optimization: Hide previous tab immediately to prevent stacking/flicker
+                    {
+                        let mut current = state.current_tab.lock().unwrap();
+                        if let Some(ref old_label) = *current {
+                             if let Some(old_webview) = app.get_webview(old_label) {
+                                 let _ = old_webview.hide();
+                             }
+                        }
+                        *current = Some(label.clone());
+                    }
+
+                    let _ = webview.show();
+                    let _ = webview.set_focus();
+                    let _ = app.emit::<TabCreatedPayload>("tab-created", TabCreatedPayload {
+                        label: label.clone(),
+                        url: url.clone(),
+                    });
+
+                    // Initial check
+                    let wv = webview.clone();
+                    let u = url.clone();
+                    tauri::async_runtime::spawn(async move {
+                        check_and_redirect(wv, u).await;
+                    });
+                },
+                Err(e) => {
+                    println!("Rust: Error creating tab {}: {:?}", label, e);
+                    return Err(format!("Failed to create tab: {:?}", e));
                 }
-                *current = Some(label.clone());
             }
-
-            let _ = webview.show();
-            let _ = webview.set_focus();
-            let _ = app.emit("tab-created", TabCreatedPayload {
-                label: label.clone(),
-                url: url.clone(),
-            });
-
-            // Initial check
-            let wv = webview.clone();
-            let u = url.clone();
-            tauri::async_runtime::spawn(async move {
-                check_and_redirect(wv, u).await;
-            });
         },
-        Err(e) => println!("Error creating tab {}: {:?}", label, e),
+        Err(payload) => {
+             println!("Rust: add_child PANICKED for {}: {:?}", label, payload);
+             return Err("add_child panicked".to_string());
+        }
     }
     
     Ok(())
