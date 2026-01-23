@@ -5,8 +5,8 @@
 *.zig linguist-language=Zig
 
 # Razor / Blazor
-*.razor linguist-language=ASP.NET\ Razor
-*.cshtml linguist-language=ASP.NET\ Razor
+*.razor linguist-language=C#
+*.cshtml linguist-language=C#
 
 # Go
 *.go linguist-language=Go
