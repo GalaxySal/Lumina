@@ -1,0 +1,19 @@
+# Auto-detect text files and perform LF normalization
+* text=auto
+
+# Zig
+*.zig linguist-language=Zig
+
+# Razor / Blazor
+*.razor linguist-language=ASP.NET\ Razor
+*.cshtml linguist-language=ASP.NET\ Razor
+
+# Go
+*.go linguist-language=Go
+
+# Rust
+*.rs linguist-language=Rust
+
+# Documentation
+*.md linguist-documentation
+LICENSE linguist-documentation
