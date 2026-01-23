@@ -8,8 +8,6 @@
 *.razor linguist-language=C#
 *.cshtml linguist-language=C#
 
-# Go
-src-go/** linguist-vendored=false
 
 # Rust
 *.rs linguist-language=Rust
