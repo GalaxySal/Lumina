@@ -9,8 +9,6 @@
 *.cshtml linguist-language=C#
 
 # Go
-*.go linguist-language=Go
-src-go/** linguist-detectable=true
 src-go/** linguist-vendored=false
 
 # Rust
