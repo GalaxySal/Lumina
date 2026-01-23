@@ -2316,7 +2316,9 @@ pub fn run() {
         )
         .register_uri_scheme_protocol("lumina", move |ctx, request| {
             let uri = request.uri().to_string();
-            let path = uri.replace("lumina://", "");
+            // Robust parsing: strip scheme, then strip leading slashes to handle lumina://path, lumina:///path, or lumina:path
+            let path = uri.strip_prefix("lumina:").unwrap_or(&uri);
+            let path = path.trim_start_matches('/');
             let path = path.trim_end_matches('/');
 
             match path {

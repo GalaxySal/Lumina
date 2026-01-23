@@ -1,7 +1,7 @@
 # Release Script for Lumina Browser
 $ErrorActionPreference = "Stop"
 
-Write-Host "🚀 Starting Release Process for Lumina Browser v0.3.0..." -ForegroundColor Cyan
+Write-Host "🚀 Starting Release Process for Lumina Browser v0.3.1..." -ForegroundColor Cyan
 
 # Define paths
 $ScriptDir = $PSScriptRoot

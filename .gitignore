@@ -6,6 +6,7 @@ target/
 
 # Zig
 zig-cache/
+.zig-cache/
 zig-out/
 
 # Ignore Visual Studio temporary files, build results, and
