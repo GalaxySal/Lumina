@@ -1076,10 +1076,12 @@
         if (targetUrl.StartsWith("lumina://", StringComparison.OrdinalIgnoreCase))
         {
             var page = targetUrl.Substring(9).ToLower();
-            if (page == "downloads") { IsMenuOpen = true; MenuTab = "downloads"; StateHasChanged(); return; }
-            if (page == "history") { IsMenuOpen = true; MenuTab = "history"; StateHasChanged(); return; }
+            // We now handle these pages via Rust protocol handlers for better performance and consistency
+            // if (page == "downloads") { IsMenuOpen = true; MenuTab = "downloads"; StateHasChanged(); return; }
+            // if (page == "history") { IsMenuOpen = true; MenuTab = "history"; StateHasChanged(); return; }
+            // if (page == "favorites") { IsMenuOpen = true; MenuTab = "favorites"; StateHasChanged(); return; }
+            
             if (page == "settings") { IsMenuOpen = true; MenuTab = "settings"; StateHasChanged(); return; }
-            if (page == "favorites") { IsMenuOpen = true; MenuTab = "favorites"; StateHasChanged(); return; }
             if (page == "network") { IsMenuOpen = true; MenuTab = "network"; StateHasChanged(); return; }
         }
         

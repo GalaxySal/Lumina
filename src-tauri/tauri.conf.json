@@ -16,7 +16,8 @@
         "title": "Lumina Browser",
         "width": 800,
         "height": 600,
-        "transparent": false
+        "transparent": false,
+        "additionalBrowserArgs": "--ignore-certificate-errors"
       }
     ],
     "security": {
