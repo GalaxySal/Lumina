@@ -51,9 +51,15 @@ jobs:
         with:
           version: 0.11.0
 
-      - name: Build Sidecars (Mock)
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Build Sidecars
         shell: pwsh
-        run: ./scripts/build-sidecars.ps1 -Mode Mock
+        run: ./scripts/build-sidecars.ps1
 
       - name: Run clippy
         run: cargo clippy -- -D warnings

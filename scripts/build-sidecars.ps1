@@ -1,8 +1,4 @@
 # scripts/build-sidecars.ps1
-param (
-    [string]$Mode = "Build" # Options: "Build", "Mock"
-)
-
 $ErrorActionPreference = "Stop"
 
 # Determine Root Directory (One level up from scripts/)
@@ -28,29 +24,7 @@ try {
 $Ext = ""
 if ($TargetTriple -match "windows") { $Ext = ".exe" }
 
-# Function to create mock binary
-function New-MockBinary {
-    param ($Name)
-    $Path = Join-Path $BinDir "$Name-$TargetTriple$Ext"
-    Set-Content -Path $Path -Value "Mock Binary for CI/Clippy"
-    Write-Host "✅ Created Mock Binary: $Path" -ForegroundColor Magenta
-}
-
 # ---------------------------------------------------------
-# MOCK MODE
-# ---------------------------------------------------------
-if ($Mode -eq "Mock") {
-    Write-Host "`n🧪 Running in MOCK mode - creating dummy binaries for CI..." -ForegroundColor Magenta
-    New-MockBinary "lumina-net"
-    New-MockBinary "kip-lang"
-    New-MockBinary "lumina-sidekick"
-    exit 0
-}
-
-# ---------------------------------------------------------
-# BUILD MODE
-# ---------------------------------------------------------
-
 # 1. Build Go Sidecar (lumina-net)
 # ---------------------------------------------------------
 Write-Host "`n🔨 Building Go Sidecar (lumina-net)..." -ForegroundColor Yellow
@@ -109,6 +83,62 @@ if (Test-Path $KipDir) {
     }
 } else {
     Write-Warning "src-kip directory not found at $KipDir"
+}
+
+# ---------------------------------------------------------
+# 3. Build Python Sidecar (lumina-sidekick)
+# ---------------------------------------------------------
+Write-Host "`n🔨 Building Python Sidecar (lumina-sidekick)..." -ForegroundColor Yellow
+$SidekickDir = Join-Path $Root "src-sidekick"
+if (Test-Path $SidekickDir) {
+    Push-Location $SidekickDir
+    try {
+        # Check if Python is available
+        if (!(Get-Command python -ErrorAction SilentlyContinue)) {
+            Write-Error "Python is not installed or not in PATH."
+            exit 1
+        }
+        
+        # Install requirements
+        Write-Host "Installing requirements..." -ForegroundColor Gray
+        python -m pip install -r requirements.txt | Out-Null
+        
+        # Determine output filename based on OS
+        $OutputName = "LuminaSidekick$Ext"
+        if ($Ext -eq "") { $OutputName = "LuminaSidekick.bin" }
+
+        # Build command using Nuitka
+        Write-Host "Running Nuitka build..." -ForegroundColor Gray
+        $NuitkaCmd = "python -m nuitka --onefile --standalone --enable-plugin=pyside6 --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=$OutputName main.py"
+        
+        if ($TargetTriple -match "windows") {
+            $NuitkaCmd += " --windows-console-mode=disable --windows-icon-from-ico=../src-tauri/icons/icon.ico"
+        }
+
+        Invoke-Expression $NuitkaCmd
+        
+        if (Test-Path $OutputName) {
+            $SidekickDest = Join-Path $BinDir "lumina-sidekick-$TargetTriple$Ext"
+            Copy-Item -Path $OutputName -Destination $SidekickDest -Force
+            Write-Host "✅ Python Sidecar built and moved to: $SidekickDest" -ForegroundColor Green
+        } else {
+            # Linux fallback check (sometimes Nuitka output name varies)
+            if ($Ext -eq "" -and (Test-Path "LuminaSidekick")) {
+                $SidekickDest = Join-Path $BinDir "lumina-sidekick-$TargetTriple$Ext"
+                Copy-Item -Path "LuminaSidekick" -Destination $SidekickDest -Force
+                 Write-Host "✅ Python Sidecar built (fallback) and moved to: $SidekickDest" -ForegroundColor Green
+            } else {
+                 Write-Error "LuminaSidekick binary was not created!"
+            }
+        }
+
+    } catch {
+        Write-Error "Python build failed: $_"
+    } finally {
+        Pop-Location
+    }
+} else {
+    Write-Warning "src-sidekick directory not found at $SidekickDir"
 }
 
 Write-Host "`n🎉 Sidecar build process completed." -ForegroundColor Cyan
