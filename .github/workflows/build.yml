@@ -70,7 +70,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev build-essential curl wget libssl-dev file patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev build-essential curl wget libssl-dev file patchelf libxcb-cursor0 libxcb-xinerama0
 
       - name: Build Sidecars
         shell: bash
@@ -97,14 +97,17 @@ jobs:
           
           # Nuitka Build
           if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-             python -m nuitka --onefile --standalone --enable-plugin=pyqt6 --windows-console-mode=disable --windows-icon-from-ico=../src-tauri/icons/icon.ico --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.exe main.py
+             python -m nuitka --onefile --standalone --enable-plugin=pyside6 --windows-console-mode=disable --windows-icon-from-ico=../src-tauri/icons/icon.ico --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.exe main.py
              cp LuminaSidekick.exe ../src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           else
-             python -m nuitka --onefile --standalone --enable-plugin=pyqt6 --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.bin main.py
+             python -m nuitka --onefile --standalone --enable-plugin=pyside6 --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.bin main.py
              cp LuminaSidekick.bin ../src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           fi
           
           cd .. 
+          
+          echo "Verifying binaries..."
+          ls -l src-tauri/binaries/ 
 
       - name: Debug Binaries (Linux/Mac)
         if: matrix.platform != 'windows-latest'

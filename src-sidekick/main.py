@@ -1,10 +1,10 @@
 import sys
 import os
 import psutil
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QFrame, QSizePolicy)
-from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal, QRectF
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QDragEnterEvent, QDropEvent
+from PySide6.QtCore import QTimer, Qt, QThread, Signal, QRectF
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QDragEnterEvent, QDropEvent
 from moviepy import VideoFileClip
 
 # --- 🎨 Modern Circular Progress Bar ---
@@ -56,8 +56,8 @@ class CircularProgress(QWidget):
 
 # --- 🔄 Video Converter Thread ---
 class ConverterThread(QThread):
-    progress_updated = pyqtSignal(str) # Durum mesajı
-    finished = pyqtSignal()
+    progress_updated = Signal(str) # Durum mesajı
+    finished = Signal()
 
     def __init__(self, file_path):
         super().__init__()
