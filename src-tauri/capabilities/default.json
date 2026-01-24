@@ -27,6 +27,11 @@
           "name": "binaries/lumina-net",
           "sidecar": true,
           "args": true
+        },
+        {
+          "name": "binaries/lumina-sidekick",
+          "sidecar": true,
+          "args": true
         }
       ]
     },

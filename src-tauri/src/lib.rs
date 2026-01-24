@@ -30,6 +30,11 @@ struct AdblockStatsPayload {
 }
 
 fn check_adblock_url(url: &str, referer: Option<&str>, label: &str, app: &AppHandle) -> bool {
+    // 0. Always Allow Internal Protocols
+    if url.starts_with("lumina:") || url.starts_with("lumina-app:") {
+        return false;
+    }
+
     // 0. Force Block List (Overrides Friendly Policy) - Kills AdMatic & Google Ads on Friendly Sites
     if url.contains("admatic.com.tr") || 
        url.contains("doubleclick.net") || 
@@ -127,6 +132,8 @@ pub struct DownloadItem {
     pub downloaded_size: u64,
     pub path: String,
     pub status: String, // "downloading", "paused", "completed", "failed"
+    #[serde(default)]
+    pub added_at: i64,
 }
 
 pub struct DownloadManager {
@@ -183,6 +190,11 @@ impl DownloadManager {
         }
         // Don't save on every progress update to avoid IO thrashing
     }
+
+    pub fn get_downloads(&self) -> Vec<DownloadItem> {
+        let data = self.downloads.lock().unwrap();
+        data.values().cloned().collect()
+    }
 }
 
 async fn check_and_redirect(webview: tauri::Webview, url: String) {
@@ -233,26 +245,558 @@ fn navigate(app: AppHandle, label: String, url: String) {
     
     if let Some(webview) = app.get_webview(&label) {
         let _ = webview.set_focus();
+        
+        // Rewrite lumina:// to lumina-app://localhost/ (standardized) for internal navigation
+        let target_url = if url.starts_with("lumina://") {
+            url.replace("lumina://", "lumina-app://localhost/")
+        } else if url.starts_with("lumina-app://") {
+             if !url.contains("lumina-app://localhost/") {
+                 url.replace("lumina-app://", "lumina-app://localhost/")
+             } else {
+                 url.clone()
+             }
+        } else {
+            url.clone()
+        };
+
+        println!("Rust: navigating tab {} to {}", label, target_url); // DEBUG LOG
+
         // Use eval for navigation
-        let _ = webview.eval(&format!("window.location.assign('{}')", url));
+        let _ = webview.eval(format!("window.location.assign('{}')", target_url).as_str());
         
         // Check connection
         let wv = webview.clone();
-        let u = url.clone();
+        let u = target_url.clone();
         tauri::async_runtime::spawn(async move {
             check_and_redirect(wv, u).await;
         });
     } else {
         println!("Rust: webview {} not found via AppHandle lookup", label);
-        // Fallback: This is likely a race condition where create_tab succeeded but the webview isn't in the global map yet?
-        // Or maybe add_child failed silently? But we have logs for success/fail.
-        // Wait: The logs show "Attempting to add_child" but NOT "Rust: Tab ... created successfully" or "Error creating tab".
-        // This means add_child is HANGING or panicking silently!
-        
-        // println!("Rust: Available webviews:");
-        // for (l, _) in app.webviews() {
-        //     println!(" - {}", l);
-        // }
+    }
+}
+
+fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
+    match path {
+        "history" => {
+            let history_manager = app.state::<HistoryManager>();
+            let history = history_manager.get_recent(100).unwrap_or_default();
+            
+            let mut items_html = String::new();
+            for item in history {
+                // Convert timestamp to readable date (simplified)
+                let date = chrono::DateTime::from_timestamp(item.last_visit, 0)
+                    .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                    .unwrap_or_else(|| "Unknown".to_string());
+
+                items_html.push_str(&format!(
+                    r#"<div class="item">
+                        <div class="time">{}</div>
+                        <div class="info">
+                            <div class="title">{}</div>
+                            <div class="url"><a href="{}">{}</a></div>
+                        </div>
+                    </div>"#,
+                    date, item.title, item.url, item.url
+                ));
+            }
+            
+            if items_html.is_empty() {
+                items_html = r#"<div class="empty-state">No history yet</div>"#.to_string();
+            }
+
+            Some(format!(
+                r#"<!DOCTYPE html>
+                <html>
+                <head>
+                    <title>History</title>
+                    <meta charset="UTF-8">
+                    <style>
+                        body {{ font-family: system-ui, -apple-system, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
+                        h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; font-weight: 600; }}
+                        .item {{ background: white; padding: 15px 20px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid #3b82f6; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 20px; }}
+                        .time {{ color: #9ca3af; font-size: 0.85em; white-space: nowrap; min-width: 120px; }}
+                        .info {{ flex: 1; overflow: hidden; }}
+                        .title {{ font-weight: 500; margin-bottom: 2px; color: #1f2937; }}
+                        .url a {{ color: #6b7280; font-size: 0.9em; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }}
+                        .url a:hover {{ color: #2563eb; text-decoration: underline; }}
+                        .empty-state {{ text-align: center; color: #6b7280; padding: 60px; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>History</h1>
+                    <div id="list">{}</div>
+                </body>
+                </html>"#,
+                items_html
+            ))
+        },
+        "downloads" => {
+            let download_manager = app.state::<DownloadManager>();
+            let downloads = download_manager.inner().get_downloads();
+            
+            let mut items_html = String::new();
+            for item in downloads.iter().rev() {
+                 let finished = item.status == "completed";
+                 let status_color = if finished { "#10b981" } else { "#f59e0b" };
+                 let status_text = if finished { "Completed" } else { "Downloading..." };
+                 
+                 let date = if item.added_at > 0 {
+                     chrono::DateTime::from_timestamp(item.added_at, 0)
+                         .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                         .unwrap_or_default()
+                 } else {
+                     "".to_string()
+                 };
+
+                 items_html.push_str(&format!(
+                    r#"<div class="item">
+                        <div class="icon">⬇️</div>
+                        <div class="info">
+                            <div class="filename">{}</div>
+                            <div class="url"><a href="{}">{}</a></div>
+                            <div class="meta" style="color: {};">{} • {} • {}</div>
+                        </div>
+                        <div class="actions">
+                            <button onclick="window.__TAURI__.core.invoke('open_file', {{ path: '{}' }})">Open</button>
+                            <button onclick="window.__TAURI__.core.invoke('show_in_folder', {{ path: '{}' }})">Show in Folder</button>
+                        </div>
+                    </div>"#,
+                    item.file_name, item.url, item.url, 
+                    status_color, status_text, item.path, date,
+                    item.path.replace("\\", "\\\\"), item.path.replace("\\", "\\\\")
+                ));
+            }
+
+            if items_html.is_empty() {
+                items_html = r#"<div class="empty-state">No downloads yet</div>"#.to_string();
+            }
+
+            Some(format!(
+                r#"<!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Downloads</title>
+                    <meta charset="UTF-8">
+                    <style>
+                        body {{ font-family: system-ui, -apple-system, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
+                        h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; font-weight: 600; }}
+                        .item {{ background: white; padding: 20px; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 20px; }}
+                        .icon {{ font-size: 24px; background: #eff6ff; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }}
+                        .info {{ flex: 1; overflow: hidden; }}
+                        .filename {{ font-weight: 600; font-size: 1.1em; margin-bottom: 4px; }}
+                        .url a {{ color: #6b7280; font-size: 0.9em; text-decoration: none; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+                        .meta {{ font-size: 0.85em; margin-top: 4px; font-weight: 500; }}
+                        .actions {{ display: flex; gap: 10px; }}
+                        button {{ padding: 8px 16px; cursor: pointer; border: 1px solid #d1d5db; background: white; border-radius: 6px; font-size: 0.9em; transition: all 0.2s; color: #374151; }}
+                        button:hover {{ background: #f3f4f6; border-color: #9ca3af; }}
+                        .empty-state {{ text-align: center; color: #6b7280; padding: 60px; font-size: 1.1em; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Downloads</h1>
+                    <div id="list">{}</div>
+                </body>
+                </html>"#,
+                items_html
+            ))
+        },
+        "favorites" | "bookmarks" => {
+            let state = app.state::<AppDataStore>();
+            let data = state.data.lock().unwrap();
+            let favorites = &data.favorites;
+            
+            let mut items_html = String::new();
+            for item in favorites {
+                items_html.push_str(&format!(
+                    r#"<div class="item">
+                        <div class="icon">★</div>
+                        <div class="info">
+                            <div class="filename">{}</div>
+                            <div class="url"><a href="{}">{}</a></div>
+                        </div>
+                        <div class="actions">
+                            <button class="danger" onclick="window.__TAURI__.core.invoke('remove_favorite', {{ url: '{}' }}).then(() => window.location.reload())">Remove</button>
+                        </div>
+                    </div>"#,
+                    item.title, item.url, item.url, item.url
+                ));
+            }
+            
+            if items_html.is_empty() {
+                 items_html = r#"<div class="empty-state">No favorites yet</div>"#.to_string();
+            }
+            
+            Some(format!(
+                r#"<!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Favorites</title>
+                    <meta charset="UTF-8">
+                    <style>
+                        body {{ font-family: system-ui, -apple-system, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
+                        h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; font-weight: 600; }}
+                        .item {{ background: white; padding: 20px; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 20px; }}
+                        .icon {{ color: #fbbf24; font-size: 24px; }}
+                        .info {{ flex: 1; overflow: hidden; }}
+                        .filename {{ font-weight: 600; font-size: 1.1em; margin-bottom: 4px; }}
+                        .url a {{ color: #6b7280; font-size: 0.9em; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }}
+                        .actions button {{ padding: 8px 16px; cursor: pointer; border: 1px solid #d1d5db; background: white; border-radius: 6px; font-size: 0.9em; color: #374151; }}
+                        .actions button.danger {{ color: #dc2626; border-color: #fca5a5; }}
+                        .actions button.danger:hover {{ background: #fef2f2; }}
+                        .empty-state {{ text-align: center; color: #6b7280; padding: 60px; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Favorites</h1>
+                    <div id="list">
+                        {}
+                    </div>
+                </body>
+                </html>"#,
+                items_html
+            ))
+        },
+        "settings" => {
+            let state = app.state::<AppDataStore>();
+            let data = state.data.lock().unwrap();
+            let settings = &data.settings;
+            
+            Some(format!(
+                r#"<!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Settings</title>
+                    <meta charset="UTF-8">
+                    <style>
+                        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 600px; margin: 0 auto; }}
+                        h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }}
+                        .group {{ background: white; padding: 25px; margin-bottom: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+                        .form-group {{ margin-bottom: 20px; }}
+                        .form-group:last-child {{ margin-bottom: 0; }}
+                        label {{ display: block; margin-bottom: 8px; font-weight: 500; font-size: 0.95em; color: #374151; }}
+                        input[type="text"], select {{ width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1em; box-sizing: border-box; transition: border-color 0.2s; }}
+                        input[type="text"]:focus, select:focus {{ outline: none; border-color: #2563eb; ring: 2px solid #bfdbfe; }}
+                        .checkbox-group {{ display: flex; align-items: center; }}
+                        input[type="checkbox"] {{ width: 18px; height: 18px; margin-right: 10px; }}
+                        button {{ background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1em; font-weight: 500; cursor: pointer; transition: background 0.2s; width: 100%; margin-top: 10px; }}
+                        button:hover {{ background: #1d4ed8; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Settings</h1>
+                    <div class="group">
+                        <div class="form-group">
+                            <label>Homepage URL</label>
+                            <input type="text" id="homepage" value="{}">
+                        </div>
+                        <div class="form-group">
+                            <label>Search Engine</label>
+                            <select id="search_engine">
+                                <option value="google" {}>Google</option>
+                                <option value="bing" {}>Bing</option>
+                                <option value="duckduckgo" {}>DuckDuckGo</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="group">
+                        <div class="form-group">
+                            <label>Theme</label>
+                            <select id="theme">
+                                <option value="dark" {}>Dark</option>
+                                <option value="light" {}>Light</option>
+                                <option value="system" {}>System</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Accent Color</label>
+                            <input type="text" id="accent_color" value="{}">
+                        </div>
+                    </div>
+
+                    <div class="group">
+                        <div class="form-group checkbox-group">
+                            <input type="checkbox" id="vertical_tabs" {}>
+                            <label for="vertical_tabs" style="margin-bottom: 0">Vertical Tabs</label>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <input type="checkbox" id="rounded_corners" {}>
+                            <label for="rounded_corners" style="margin-bottom: 0">Rounded Corners</label>
+                        </div>
+                    </div>
+
+                    <button onclick="save()">Save Settings</button>
+
+                    <script>
+                        function save() {{
+                            const homepage = document.getElementById('homepage').value;
+                            const search_engine = document.getElementById('search_engine').value;
+                            const theme = document.getElementById('theme').value;
+                            const accent_color = document.getElementById('accent_color').value;
+                            const vertical_tabs = document.getElementById('vertical_tabs').checked;
+                            const rounded_corners = document.getElementById('rounded_corners').checked;
+
+                            window.__TAURI__.core.invoke('save_settings', {{
+                                homepage, 
+                                searchEngine: search_engine, 
+                                theme, 
+                                accentColor: accent_color, 
+                                verticalTabs: vertical_tabs, 
+                                roundedCorners: rounded_corners
+                            }}).then(() => {{
+                                alert('Settings saved!');
+                            }}).catch(e => {{
+                                alert('Error saving settings: ' + e);
+                            }});
+                        }}
+                    </script>
+                </body>
+                </html>"#,
+                settings.homepage,
+                if settings.search_engine == "google" { "selected" } else { "" },
+                if settings.search_engine == "bing" { "selected" } else { "" },
+                if settings.search_engine == "duckduckgo" { "selected" } else { "" },
+                if settings.theme == "dark" { "selected" } else { "" },
+                if settings.theme == "light" { "selected" } else { "" },
+                if settings.theme == "system" { "selected" } else { "" },
+                settings.accent_color,
+                if settings.vertical_tabs { "checked" } else { "" },
+                if settings.rounded_corners { "checked" } else { "" }
+            ))
+        },
+        "network" => {
+            Some(r#"<!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Network Manager</title>
+                    <meta charset="UTF-8">
+                    <style>
+                        body { font-family: system-ui, -apple-system, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }
+                        h1 { border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; font-weight: 600; }
+                        .card { background: white; padding: 25px; margin-bottom: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+                        h2 { margin-top: 0; font-size: 1.2em; color: #374151; border-bottom: 1px solid #f3f4f6; padding-bottom: 10px; margin-bottom: 15px; }
+                        .status-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
+                        .status-item:last-child { border-bottom: none; }
+                        .label { font-weight: 500; color: #6b7280; }
+                        .value { font-family: monospace; color: #111827; }
+                        .form-row { display: flex; gap: 10px; align-items: flex-end; }
+                        .input-group { flex: 1; }
+                        label { display: block; margin-bottom: 5px; font-size: 0.9em; font-weight: 500; color: #374151; }
+                        input, select { width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box; }
+                        button { padding: 9px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; transition: background 0.2s; }
+                        button:hover { background: #1d4ed8; }
+                        button.secondary { background: white; border: 1px solid #d1d5db; color: #374151; }
+                        button.secondary:hover { background: #f3f4f6; }
+                        button.danger { background: #dc2626; color: white; border: none; }
+                        button.danger:hover { background: #b91c1c; }
+                        #server-list { margin-top: 10px; }
+                        .empty-list { color: #9ca3af; font-style: italic; padding: 10px 0; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Network Manager</h1>
+                    
+                    <div class="card">
+                        <h2>Sidecar Status</h2>
+                        <div id="status-display">
+                            <div class="status-item">
+                                <span class="label">Status</span>
+                                <span class="value" id="connection-status">Checking...</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="label">Active Servers</span>
+                                <span class="value" id="active-count">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2>Active Servers</h2>
+                        <div id="server-list">
+                            <div class="empty-list">No active servers</div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2>Start New Server</h2>
+                        <div class="form-row">
+                            <div class="input-group">
+                                <label>Port</label>
+                                <input type="number" id="port-input" value="8080" min="1" max="65535">
+                            </div>
+                            <div class="input-group">
+                                <label>Type</label>
+                                <select id="type-input">
+                                    <option value="tcp">TCP</option>
+                                </select>
+                            </div>
+                            <button onclick="startServer()">Start Server</button>
+                        </div>
+                    </div>
+
+                    <script>
+                        async function invokeNet(command, payload = {}) {
+                            try {
+                                const res = await window.__TAURI__.core.invoke('run_networking_command', { 
+                                    command: command, 
+                                    payload: JSON.stringify(payload) 
+                                });
+                                return JSON.parse(res);
+                            } catch (e) {
+                                console.error("Network Error:", e);
+                                return { status: "error", message: e };
+                            }
+                        }
+
+                        async function refreshStatus() {
+                            const res = await invokeNet('status');
+                            if (res.status === 'ok') {
+                                document.getElementById('connection-status').textContent = 'Connected';
+                                document.getElementById('connection-status').style.color = '#10b981';
+                                
+                                const servers = res.data.active_servers || [];
+                                document.getElementById('active-count').textContent = servers.length;
+                                
+                                const list = document.getElementById('server-list');
+                                if (servers.length === 0) {
+                                    list.innerHTML = '<div class="empty-list">No active servers</div>';
+                                } else {
+                                    list.innerHTML = servers.map(addr => `
+                                        <div class="status-item">
+                                            <span class="value">${addr}</span>
+                                            <button class="secondary danger" style="padding: 4px 8px; font-size: 0.8em;" onclick="stopServer('${addr}')">Stop</button>
+                                        </div>
+                                    `).join('');
+                                }
+                            } else {
+                                document.getElementById('connection-status').textContent = 'Error';
+                                document.getElementById('connection-status').style.color = '#dc2626';
+                            }
+                        }
+
+                        async function startServer() {
+                            const port = parseInt(document.getElementById('port-input').value);
+                            const type = document.getElementById('type-input').value;
+                            
+                            const res = await invokeNet('start_server', { port, type });
+                            if (res.status === 'ok') {
+                                alert('Server started!');
+                                refreshStatus();
+                            } else {
+                                alert('Error: ' + res.message);
+                            }
+                        }
+
+                        async function stopServer(addr) {
+                            // Parse port from address (e.g., ":8080")
+                            const port = parseInt(addr.replace(':', ''));
+                            if (confirm(`Stop server on port ${port}?`)) {
+                                const res = await invokeNet('stop_server', { port, type: 'tcp' });
+                                if (res.status === 'ok') {
+                                    refreshStatus();
+                                } else {
+                                    alert('Error: ' + res.message);
+                                }
+                            }
+                        }
+
+                        // Initial refresh
+                        refreshStatus();
+                        
+                        // Refresh every 5 seconds
+                        setInterval(refreshStatus, 5000);
+                    </script>
+                </body>
+                </html>"#.to_string()
+            )
+        },
+        _ => Some(format!(
+            r#"<!DOCTYPE html>
+            <html>
+            <head>
+                <title>404 Not Found</title>
+                <meta charset="UTF-8">
+                <style>
+                    body {{ font-family: system-ui, -apple-system, sans-serif; height: 100vh; display: flex; align-items: center; justify-content: center; background: #f9fafb; color: #374151; margin: 0; }}
+                    .container {{ text-align: center; }}
+                    h1 {{ font-size: 4em; margin: 0; color: #1f2937; }}
+                    p {{ font-size: 1.2em; margin-top: 10px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>404</h1>
+                    <p>Page not found: {}</p>
+                </div>
+            </body>
+            </html>"#,
+            path
+        ))
+    }
+}
+
+#[tauri::command]
+fn force_internal_navigate(app: AppHandle, label: String, mut url: String) {
+    println!("Rust: force_internal_navigate tab {} to {}", label, url);
+
+    // Standardize URL to ensure same-origin (lumina-app://localhost/)
+    if url.starts_with("lumina://") {
+        url = url.replace("lumina://", "lumina-app://localhost/");
+    } else if url.starts_with("lumina-app://") {
+         let scheme = "lumina-app://";
+         if let Some(rest) = url.strip_prefix(scheme) {
+             if !rest.starts_with("localhost/") && rest != "localhost" {
+                 // Convert lumina-app://page to lumina-app://localhost/page
+                 url = format!("{}localhost/{}", scheme, rest);
+             }
+         }
+    }
+
+    if let Some(webview) = app.get_webview(&label) {
+         let _ = webview.set_focus();
+         
+         // Check if it's an internal page
+         let mut is_internal = false;
+         let mut internal_html = None;
+
+         if url.starts_with("lumina-app://") || url.starts_with("lumina://") {
+            let scheme_strip = if url.starts_with("lumina-app:") { "lumina-app:" } else { "lumina:" };
+            let without_scheme = url.strip_prefix(scheme_strip).unwrap_or(&url);
+            let without_slashes = without_scheme.trim_start_matches('/');
+            let path_and_query = without_slashes.strip_prefix("localhost").unwrap_or(without_slashes);
+            let full_path = path_and_query.trim_start_matches('/');
+            
+            // Split path and query/hash
+            let (path, _query) = if let Some(idx) = full_path.find('?') {
+                (&full_path[..idx], &full_path[idx..])
+            } else if let Some(idx) = full_path.find('#') {
+                 (&full_path[..idx], &full_path[idx..])
+            } else {
+                (full_path, "")
+            };
+            
+            let path = path.trim_end_matches('/');
+            
+            if let Some(html) = get_internal_page_html(&app, path) {
+                is_internal = true;
+                internal_html = Some(html);
+            }
+         }
+
+         if is_internal {
+             if let Some(html) = internal_html {
+                 // Escape HTML for JS string
+                 let escaped_html = html.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "");
+                 let js = format!(
+                     "window.stop(); document.open(); document.write('{}'); document.close(); try {{ history.pushState(null, '', '{}'); }} catch(e) {{ console.warn('PushState failed (likely origin mismatch), but content loaded:', e); }}", 
+                     escaped_html, url
+                 );
+                 let _ = webview.eval(&js);
+             }
+         } else {
+             // Fallback for external URLs or if parsing failed
+             let _ = webview.eval(format!("window.location.replace('{}')", url).as_str());
+         }
     }
 }
 
@@ -1418,6 +1962,16 @@ fn update_tab_info(app: AppHandle, history_manager: tauri::State<'_, HistoryMana
     let _ = app.emit("tab-updated", TabUpdatedPayload { label, title, favicon });
 }
 
+struct NetworkSidecarRequest {
+    command: String,
+    payload: String,
+    response_tx: tokio::sync::oneshot::Sender<String>,
+}
+
+struct NetworkState {
+    tx: tokio::sync::mpsc::Sender<NetworkSidecarRequest>,
+}
+
 struct UiState {
     sidebar_open: std::sync::atomic::AtomicBool,
     suggestions_height: std::sync::atomic::AtomicU32,
@@ -1429,6 +1983,19 @@ struct UiState {
 #[tauri::command]
 async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store: tauri::State<'_, AppDataStore>, label: String, url: String, _window: tauri::Window) -> Result<(), String> {
     // println!("Rust: create_tab called for {} url: {}", label, url);
+
+    // Rewrite lumina:// to lumina-app://localhost/ for internal navigation to avoid OS deep link conflict
+    let url = if url.starts_with("lumina://") {
+        url.replace("lumina://", "lumina-app://localhost/")
+    } else if url.starts_with("lumina-app://") {
+         if !url.contains("lumina-app://localhost/") {
+             url.replace("lumina-app://", "lumina-app://localhost/")
+         } else {
+             url
+         }
+    } else {
+        url
+    };
 
     // Ensure we are targeting the main window for the new tab
     let target_window = app.get_window("main").ok_or_else(|| {
@@ -1876,26 +2443,21 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
 
         .on_navigation(move |url: &Url| {
             // println!("Navigation: {} -> {}", label_clone, url);
+            
+            // Explicitly allow lumina-app scheme to bypass some restrictions
+            if url.scheme() == "lumina-app" {
+                 println!("Navigation ALLOWED (internal): {}", url);
+                 return true;
+            }
+
             let _ = app_handle.emit("tab-navigation", TabNavigationPayload {
                 label: label_clone.clone(),
                 url: url.to_string(),
             });
-
-            // Check connection
-            let app = app_handle.clone();
-            let l = label_clone.clone();
-            let u = url.to_string();
-            tauri::async_runtime::spawn(async move {
-                 // Slight delay to ensure webview is ready if this is initial nav
-                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                 if let Some(wv) = app.get_webview(&l) {
-                     check_and_redirect(wv, u).await;
-                 }
-            });
-
+            
             true
         });
-    
+
     // Use add_child to create the webview inside the existing window
     // println!("Rust: Attempting to add_child for {}", label);
     // Explicitly handle the Result immediately to catch panic or error
@@ -2048,6 +2610,7 @@ async fn download_file(app: AppHandle, url: String, file_name: String) {
             downloaded_size: downloaded,
             path: path_str.clone(),
             status: "downloading".to_string(),
+            added_at: chrono::Utc::now().timestamp(),
         });
     }
     manager.save();
@@ -2300,53 +2863,29 @@ async fn run_kip_code(app: tauri::AppHandle, code: String) -> Result<String, Str
 }
 
 #[tauri::command]
-async fn run_networking_command(app: tauri::AppHandle, command: String, payload: String) -> Result<String, String> {
-    use tauri_plugin_shell::ShellExt;
-    use tauri_plugin_shell::process::CommandEvent;
+async fn run_networking_command(state: tauri::State<'_, NetworkState>, command: String, payload: String) -> Result<String, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state.tx.send(NetworkSidecarRequest {
+        command,
+        payload,
+        response_tx: tx
+    }).await.map_err(|e| e.to_string())?;
 
-    let sidecar = app.shell().sidecar("lumina-net")
+    rx.await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn run_sidekick(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri_plugin_shell::ShellExt;
+    
+    let sidecar = app.shell().sidecar("lumina-sidekick")
         .map_err(|e| e.to_string())?;
 
-    let (mut rx, mut child) = sidecar
+    let (mut _rx, _child) = sidecar
         .spawn()
         .map_err(|e| e.to_string())?;
 
-    // Parse payload to ensure it's valid JSON, or pass as null if empty
-    let payload_json: serde_json::Value = serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null);
-
-    let request = serde_json::json!({
-        "command": command,
-        "payload": payload_json
-    });
-    
-    let input = format!("{}\n", request);
-    child.write(input.as_bytes()).map_err(|e| e.to_string())?;
-    
-    let mut response = String::new();
-    
-    // Read response
-    while let Some(event) = rx.recv().await {
-         match event {
-            CommandEvent::Stdout(line) => {
-                let text = String::from_utf8_lossy(&line);
-                response.push_str(&text);
-                // In this simple one-shot mode, we assume one line response
-                if response.trim().ends_with("}") {
-                    break;
-                }
-            }
-            CommandEvent::Stderr(line) => {
-                 let text = String::from_utf8_lossy(&line);
-                 println!("Lumina-Net Stderr: {}", text);
-            }
-             _ => {}
-         }
-    }
-    
-    // Clean up
-    let _ = child.kill();
-
-    Ok(response)
+    Ok("Sidekick started".to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2374,321 +2913,48 @@ pub fn run() {
                 }
             }).build()
         )
-        .register_uri_scheme_protocol("lumina", move |ctx, request| {
+        .register_uri_scheme_protocol("lumina-app", move |ctx, request| {
             let uri = request.uri().to_string();
-            // Robust parsing: strip scheme, then strip leading slashes to handle lumina://path, lumina:///path, or lumina:path
-            let path = uri.strip_prefix("lumina:").unwrap_or(&uri);
-            let path = path.trim_start_matches('/');
+            println!("Lumina-App Protocol Handler: {}", uri); // DEBUG LOG
+
+            // Robust parsing: handle lumina-app://path or lumina-app:path or lumina-app://localhost/path
+            // 1. Strip scheme
+            let without_scheme = uri.strip_prefix("lumina-app:").unwrap_or(&uri);
+            // 2. Strip leading slashes (//)
+            let without_slashes = without_scheme.trim_start_matches('/');
+            // 3. Strip 'localhost' if present
+            let path_and_query = without_slashes.strip_prefix("localhost").unwrap_or(without_slashes);
+            // 4. Clean up path
+            let full_path = path_and_query.trim_start_matches('/');
+            
+            // Split path and query/hash
+            let (path, _query) = if let Some(idx) = full_path.find('?') {
+                (&full_path[..idx], &full_path[idx..])
+            } else if let Some(idx) = full_path.find('#') {
+                 (&full_path[..idx], &full_path[idx..])
+            } else {
+                (full_path, "")
+            };
+            
             let path = path.trim_end_matches('/');
 
-            match path {
-                "downloads" => {
-                    let manager = ctx.app_handle().state::<DownloadManager>();
-                    let downloads = manager.downloads.lock().unwrap();
-                    
-                    let mut items_html = String::new();
-                    let items: Vec<&DownloadItem> = downloads.values().collect();
-                    
-                    for item in items {
-                        let status_class = match item.status.as_str() {
-                            "completed" => "completed",
-                            "failed" => "failed",
-                            _ => "downloading"
-                        };
-                        
-                        items_html.push_str(&format!(
-                            r#"<div class="item">
-                                <div class="info">
-                                    <div class="filename">{}</div>
-                                    <div class="url">{}</div>
-                                </div>
-                                <div class="status {}">{}</div>
-                                <div class="actions">
-                                    <button onclick="window.__TAURI__.core.invoke('show_in_folder', {{ path: '{}' }})">Show in Folder</button>
-                                </div>
-                            </div>"#,
-                            item.file_name, item.url, status_class, item.status, item.path.replace("\\", "\\\\")
-                        ));
-                    }
+            println!("Lumina-App Path: {}", path); // DEBUG LOG
 
-                    if items_html.is_empty() {
-                        items_html = r#"<div style="text-align: center; color: #6b7280; padding: 40px;">No downloads yet</div>"#.to_string();
-                    }
-
-                    let html = format!(
-                        r#"<!DOCTYPE html>
-                        <html>
-                        <head>
-                            <title>Downloads</title>
-                            <style>
-                                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
-                                h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }}
-                                .item {{ background: white; padding: 20px; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; }}
-                                .info {{ flex: 1; overflow: hidden; }}
-                                .filename {{ font-weight: 600; font-size: 1.1em; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-                                .url {{ color: #6b7280; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-                                .status {{ margin-left: 20px; font-size: 0.9em; font-weight: 500; text-transform: capitalize; min-width: 80px; text-align: right; }}
-                                .status.completed {{ color: #059669; }}
-                                .status.failed {{ color: #dc2626; }}
-                                .status.downloading {{ color: #2563eb; }}
-                                .actions {{ margin-left: 20px; }}
-                                .actions button {{ padding: 8px 16px; cursor: pointer; border: 1px solid #d1d5db; background: white; border-radius: 6px; font-size: 0.9em; transition: all 0.2s; }}
-                                .actions button:hover {{ background: #f3f4f6; border-color: #9ca3af; }}
-                            </style>
-                        </head>
-                        <body>
-                            <h1>Downloads</h1>
-                            <div id="list">
-                                {}
-                            </div>
-                        </body>
-                        </html>"#,
-                        items_html
-                    );
-
-                    tauri::http::Response::builder()
-                        .status(200)
-                        .header("Content-Type", "text/html")
-                        .body(html.into_bytes())
-                        .unwrap()
-                },
-                "history" => {
-                    let state = ctx.app_handle().state::<AppDataStore>();
-                    let data = state.data.lock().unwrap();
-                    let history = &data.history;
-                    
-                    let mut items_html = String::new();
-                    for item in history {
-                        let date = chrono::DateTime::<chrono::Utc>::from_timestamp(item.timestamp, 0)
-                            .unwrap_or_default()
-                            .format("%Y-%m-%d %H:%M");
-                            
-                        items_html.push_str(&format!(
-                            r#"<div class="item">
-                                <div class="info">
-                                    <div class="filename">{}</div>
-                                    <div class="url"><a href="{}">{}</a></div>
-                                </div>
-                                <div class="status">{}</div>
-                            </div>"#,
-                            item.title, item.url, item.url, date
-                        ));
-                    }
-                    
-                    if items_html.is_empty() {
-                         items_html = r#"<div style="text-align: center; color: #6b7280; padding: 40px;">No history yet</div>"#.to_string();
-                    }
-                    
-                    let html = format!(
-                        r#"<!DOCTYPE html>
-                        <html>
-                        <head>
-                            <title>History</title>
-                            <style>
-                                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
-                                h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }}
-                                .item {{ background: white; padding: 20px; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; }}
-                                .info {{ flex: 1; overflow: hidden; }}
-                                .filename {{ font-weight: 600; font-size: 1.1em; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-                                .url a {{ color: #6b7280; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }}
-                                .url a:hover {{ text-decoration: underline; color: #2563eb; }}
-                                .status {{ margin-left: 20px; font-size: 0.9em; color: #9ca3af; min-width: 120px; text-align: right; }}
-                            </style>
-                        </head>
-                        <body>
-                            <h1>History</h1>
-                            <div id="list">
-                                {}
-                            </div>
-                        </body>
-                        </html>"#,
-                        items_html
-                    );
-                    
-                    tauri::http::Response::builder()
-                        .status(200)
-                        .header("Content-Type", "text/html")
-                        .body(html.into_bytes())
-                        .unwrap()
-                },
-                "favorites" | "bookmarks" => {
-                    let state = ctx.app_handle().state::<AppDataStore>();
-                    let data = state.data.lock().unwrap();
-                    let favorites = &data.favorites;
-                    
-                    let mut items_html = String::new();
-                    for item in favorites {
-                        items_html.push_str(&format!(
-                            r#"<div class="item">
-                                <div class="info">
-                                    <div class="filename">{}</div>
-                                    <div class="url"><a href="{}">{}</a></div>
-                                </div>
-                                <div class="actions">
-                                    <button onclick="window.__TAURI__.core.invoke('remove_favorite', {{ url: '{}' }}).then(() => window.location.reload())">Remove</button>
-                                </div>
-                            </div>"#,
-                            item.title, item.url, item.url, item.url
-                        ));
-                    }
-                    
-                    if items_html.is_empty() {
-                         items_html = r#"<div style="text-align: center; color: #6b7280; padding: 40px;">No favorites yet</div>"#.to_string();
-                    }
-                    
-                    let html = format!(
-                        r#"<!DOCTYPE html>
-                        <html>
-                        <head>
-                            <title>Favorites</title>
-                            <style>
-                                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
-                                h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }}
-                                .item {{ background: white; padding: 20px; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; }}
-                                .info {{ flex: 1; overflow: hidden; }}
-                                .filename {{ font-weight: 600; font-size: 1.1em; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-                                .url a {{ color: #6b7280; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }}
-                                .url a:hover {{ text-decoration: underline; color: #2563eb; }}
-                                .actions {{ margin-left: 20px; }}
-                                .actions button {{ padding: 8px 16px; cursor: pointer; border: 1px solid #d1d5db; background: white; border-radius: 6px; font-size: 0.9em; transition: all 0.2s; color: #dc2626; }}
-                                .actions button:hover {{ background: #fef2f2; border-color: #fca5a5; }}
-                            </style>
-                        </head>
-                        <body>
-                            <h1>Favorites</h1>
-                            <div id="list">
-                                {}
-                            </div>
-                        </body>
-                        </html>"#,
-                        items_html
-                    );
-                    
-                    tauri::http::Response::builder()
-                        .status(200)
-                        .header("Content-Type", "text/html")
-                        .body(html.into_bytes())
-                        .unwrap()
-                },
-                "settings" => {
-                    let state = ctx.app_handle().state::<AppDataStore>();
-                    let data = state.data.lock().unwrap();
-                    let settings = &data.settings;
-                    
-                    let html = format!(
-                        r#"<!DOCTYPE html>
-                        <html>
-                        <head>
-                            <title>Settings</title>
-                            <style>
-                                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 600px; margin: 0 auto; }}
-                                h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }}
-                                .group {{ background: white; padding: 25px; margin-bottom: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-                                .form-group {{ margin-bottom: 20px; }}
-                                .form-group:last-child {{ margin-bottom: 0; }}
-                                label {{ display: block; margin-bottom: 8px; font-weight: 500; font-size: 0.95em; color: #374151; }}
-                                input[type="text"], select {{ width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1em; box-sizing: border-box; transition: border-color 0.2s; }}
-                                input[type="text"]:focus, select:focus {{ outline: none; border-color: #2563eb; ring: 2px solid #bfdbfe; }}
-                                .checkbox-group {{ display: flex; align-items: center; }}
-                                input[type="checkbox"] {{ width: 18px; height: 18px; margin-right: 10px; }}
-                                button {{ background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1em; font-weight: 500; cursor: pointer; transition: background 0.2s; width: 100%; margin-top: 10px; }}
-                                button:hover {{ background: #1d4ed8; }}
-                            </style>
-                        </head>
-                        <body>
-                            <h1>Settings</h1>
-                            <div class="group">
-                                <div class="form-group">
-                                    <label>Homepage URL</label>
-                                    <input type="text" id="homepage" value="{}">
-                                </div>
-                                <div class="form-group">
-                                    <label>Search Engine</label>
-                                    <select id="search_engine">
-                                        <option value="google" {}>Google</option>
-                                        <option value="bing" {}>Bing</option>
-                                        <option value="duckduckgo" {}>DuckDuckGo</option>
-                                    </select>
-                                </div>
-                            </div>
-                            
-                            <div class="group">
-                                <div class="form-group">
-                                    <label>Theme</label>
-                                    <select id="theme">
-                                        <option value="dark" {}>Dark</option>
-                                        <option value="light" {}>Light</option>
-                                        <option value="system" {}>System</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Accent Color</label>
-                                    <input type="text" id="accent_color" value="{}">
-                                </div>
-                            </div>
-
-                            <div class="group">
-                                <div class="form-group checkbox-group">
-                                    <input type="checkbox" id="vertical_tabs" {}>
-                                    <label for="vertical_tabs" style="margin-bottom: 0">Vertical Tabs</label>
-                                </div>
-                                <div class="form-group checkbox-group">
-                                    <input type="checkbox" id="rounded_corners" {}>
-                                    <label for="rounded_corners" style="margin-bottom: 0">Rounded Corners</label>
-                                </div>
-                            </div>
-
-                            <button onclick="save()">Save Settings</button>
-
-                            <script>
-                                function save() {{
-                                    const homepage = document.getElementById('homepage').value;
-                                    const search_engine = document.getElementById('search_engine').value;
-                                    const theme = document.getElementById('theme').value;
-                                    const accent_color = document.getElementById('accent_color').value;
-                                    const vertical_tabs = document.getElementById('vertical_tabs').checked;
-                                    const rounded_corners = document.getElementById('rounded_corners').checked;
-
-                                    window.__TAURI__.core.invoke('save_settings', {{
-                                        homepage, 
-                                        searchEngine: search_engine, 
-                                        theme, 
-                                        accentColor: accent_color, 
-                                        verticalTabs: vertical_tabs, 
-                                        roundedCorners: rounded_corners
-                                    }}).then(() => {{
-                                        alert('Settings saved!');
-                                    }}).catch(e => {{
-                                        alert('Error saving settings: ' + e);
-                                    }});
-                                }}
-                            </script>
-                        </body>
-                        </html>"#,
-                        settings.homepage,
-                        if settings.search_engine == "google" { "selected" } else { "" },
-                        if settings.search_engine == "bing" { "selected" } else { "" },
-                        if settings.search_engine == "duckduckgo" { "selected" } else { "" },
-                        if settings.theme == "dark" { "selected" } else { "" },
-                        if settings.theme == "light" { "selected" } else { "" },
-                        if settings.theme == "system" { "selected" } else { "" },
-                        settings.accent_color,
-                        if settings.vertical_tabs { "checked" } else { "" },
-                        if settings.rounded_corners { "checked" } else { "" }
-                    );
-                    
-                    tauri::http::Response::builder()
-                        .status(200)
-                        .header("Content-Type", "text/html")
-                        .body(html.into_bytes())
-                        .unwrap()
-                },
-                _ => {
-                    tauri::http::Response::builder()
-                        .status(404)
-                        .body("Not Found".as_bytes().to_vec())
-                        .unwrap()
-                }
+            if let Some(html) = get_internal_page_html(ctx.app_handle(), path) {
+                tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", "text/html; charset=utf-8")
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(html.into_bytes())
+                    .unwrap()
+            } else {
+                println!("Lumina-App: Unknown path {}", path);
+                tauri::http::Response::builder()
+                    .status(404)
+                    .header("Content-Type", "text/html; charset=utf-8")
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(format!("<h1>404 Not Found</h1><p>Path: {}</p>", path).into_bytes())
+                    .unwrap()
             }
         })
         .manage(UiState { 
@@ -2698,6 +2964,98 @@ pub fn run() {
         })
         .manage(PwaState { icons: std::sync::Mutex::new(std::collections::HashMap::new()) })
         .setup(|app| {
+            // Start Lumina Sidekick (GUI) - Fire and forget, no restart loop for GUI
+            let sidekick_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                use tauri_plugin_shell::ShellExt;
+                println!("Starting Lumina Sidekick...");
+                if let Ok(cmd) = sidekick_handle.shell().sidecar("lumina-sidekick") {
+                    if let Err(e) = cmd.spawn() {
+                        eprintln!("Failed to spawn Sidekick: {}", e);
+                    }
+                }
+            });
+
+            // Initialize Network Sidecar
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<NetworkSidecarRequest>(32);
+            app.manage(NetworkState { tx });
+            
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                use tauri_plugin_shell::ShellExt;
+                use tauri_plugin_shell::process::CommandEvent;
+
+                // Start sidecar loop
+                loop {
+                    println!("Starting Lumina-Net Sidecar...");
+                    let sidecar = match app_handle.shell().sidecar("lumina-net") {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("Failed to create sidecar command: {}", e);
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            continue;
+                        }
+                    };
+
+                    let (mut sidecar_rx, mut sidecar_child) = match sidecar.spawn() {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("Failed to spawn sidecar: {}", e);
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            continue;
+                        }
+                    };
+
+                    let mut current_response_tx: Option<tokio::sync::oneshot::Sender<String>> = None;
+
+                    loop {
+                        tokio::select! {
+                            req_opt = rx.recv() => {
+                                match req_opt {
+                                    Some(req) => {
+                                         current_response_tx = Some(req.response_tx);
+                                         let request_json = serde_json::json!({
+                                            "command": req.command,
+                                            "payload": serde_json::from_str::<serde_json::Value>(&req.payload).unwrap_or(serde_json::Value::Null)
+                                         });
+                                         let input = format!("{}\n", request_json);
+                                         if let Err(e) = sidecar_child.write(input.as_bytes()) {
+                                             eprintln!("Failed to write to sidecar: {}", e);
+                                             break; 
+                                         }
+                                    }
+                                    None => return, 
+                                }
+                            }
+                            event_opt = sidecar_rx.recv() => {
+                                match event_opt {
+                                    Some(event) => {
+                                        match event {
+                                            CommandEvent::Stdout(line) => {
+                                                let text = String::from_utf8_lossy(&line).to_string();
+                                                if let Some(tx) = current_response_tx.take() {
+                                                    let _ = tx.send(text);
+                                                }
+                                            }
+                                            CommandEvent::Stderr(line) => {
+                                                eprintln!("Lumina-Net Stderr: {}", String::from_utf8_lossy(&line));
+                                            }
+                                            CommandEvent::Terminated(t) => {
+                                                println!("Lumina-Net terminated: {:?}", t);
+                                                break; 
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    None => break, 
+                                }
+                            }
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            });
+
             // Initialize Zig Security Layer
             #[cfg(zig_enabled)]
             unsafe {
@@ -2896,6 +3254,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet, 
             navigate, 
+            force_internal_navigate,
             go_back, 
             go_forward, 
             refresh, 
@@ -2930,7 +3289,8 @@ pub fn run() {
             open_flash_window,
             clean_page,
             run_kip_code,
-            run_networking_command
+            run_networking_command,
+            run_sidekick
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

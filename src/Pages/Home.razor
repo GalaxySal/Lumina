@@ -12,7 +12,37 @@
             @foreach (var tab in Tabs)
             {
                 <div class="tab @(tab.Id == ActiveTabId ? "active" : "")" @onclick="() => SwitchTab(tab.Id)">
-                    @if (!string.IsNullOrEmpty(tab.FaviconUrl))
+                    @if (tab.Url.StartsWith("lumina-app://") || tab.Url.StartsWith("lumina://"))
+                    {
+                         @if (tab.Url.Contains("settings")) {
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="tab-icon" style="color: var(--accent-color);">
+                               <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                               <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                             </svg>
+                         }
+                         else if (tab.Url.Contains("downloads")) {
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="tab-icon" style="color: var(--accent-color);">
+                               <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                             </svg>
+                         }
+                         else if (tab.Url.Contains("history")) {
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="tab-icon" style="color: var(--accent-color);">
+                               <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                             </svg>
+                         }
+                         else if (tab.Url.Contains("favorites")) {
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="tab-icon" style="color: var(--accent-color);">
+                               <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.563.045.797.77.371 1.141l-4.197 3.655a.562.562 0 00-.168.513l1.285 5.386a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.168-.513l-4.197-3.655c-.426-.372-.192-1.096.371-1.141l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                             </svg>
+                         }
+                         else {
+                             // Default Internal Icon (Lumina)
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="tab-icon" style="color: var(--accent-color);">
+                               <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                             </svg>
+                         }
+                    }
+                    else if (!string.IsNullOrEmpty(tab.FaviconUrl))
                     {
                         <img src="@tab.FaviconUrl" class="tab-icon" onerror="this.style.display='none'" />
                     }
@@ -58,11 +88,53 @@
             </button>
             
             <div class="url-container">
-                <button class="icon-btn" title="Enhanced Tracking Protection (Active)" style="color: #4ade80; margin-right: 4px;">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-                    </svg>
-                </button>
+                @if (CurrentUrl.StartsWith("lumina-app://") || CurrentUrl.StartsWith("lumina://"))
+                {
+                     @if (CurrentUrl.Contains("settings")) {
+                         <button class="icon-btn" title="Lumina Settings" style="color: var(--accent-color); margin-right: 4px;">
+                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                             <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                           </svg>
+                         </button>
+                     }
+                     else if (CurrentUrl.Contains("downloads")) {
+                         <button class="icon-btn" title="Downloads" style="color: var(--accent-color); margin-right: 4px;">
+                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                             <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                           </svg>
+                         </button>
+                     }
+                     else if (CurrentUrl.Contains("history")) {
+                         <button class="icon-btn" title="History" style="color: var(--accent-color); margin-right: 4px;">
+                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                           </svg>
+                         </button>
+                     }
+                     else if (CurrentUrl.Contains("favorites")) {
+                         <button class="icon-btn" title="Favorites" style="color: var(--accent-color); margin-right: 4px;">
+                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                             <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.563.045.797.77.371 1.141l-4.197 3.655a.562.562 0 00-.168.513l1.285 5.386a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.168-.513l-4.197-3.655c-.426-.372-.192-1.096.371-1.141l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                           </svg>
+                         </button>
+                     }
+                     else {
+                         <button class="icon-btn" title="Lumina Secure" style="color: var(--accent-color); margin-right: 4px;">
+                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                             <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                           </svg>
+                         </button>
+                     }
+                }
+                else
+                {
+                    <button class="icon-btn" title="Enhanced Tracking Protection (Active)" style="color: #4ade80; margin-right: 4px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                        </svg>
+                    </button>
+                }
                 <div style="flex: 1; position: relative;">
                     <input class="url-input" value="@CurrentUrl" @oninput="HandleInput" @onkeyup="HandleKeyUp" placeholder="Enter URL or search..." style="width: 100%;" />
                     @if (ShowSuggestions)
@@ -1071,20 +1143,63 @@
         if (string.IsNullOrWhiteSpace(CurrentUrl)) return;
 
         string targetUrl = CurrentUrl.Trim();
-        
-        // Internal Pages Interception
-        if (targetUrl.StartsWith("lumina://", StringComparison.OrdinalIgnoreCase))
+        Console.WriteLine($"Navigate called with: {targetUrl}");
+
+        // Smart Alias Handling for Internal Pages
+        // Allows users to type "downloads", "history", "lumina downloads" etc.
+        if (targetUrl.Equals("lumina downloads", StringComparison.OrdinalIgnoreCase) || 
+            targetUrl.Equals("downloads", StringComparison.OrdinalIgnoreCase))
         {
-            var page = targetUrl.Substring(9).ToLower();
-            // We now handle these pages via Rust protocol handlers for better performance and consistency
-            // if (page == "downloads") { IsMenuOpen = true; MenuTab = "downloads"; StateHasChanged(); return; }
-            // if (page == "history") { IsMenuOpen = true; MenuTab = "history"; StateHasChanged(); return; }
-            // if (page == "favorites") { IsMenuOpen = true; MenuTab = "favorites"; StateHasChanged(); return; }
-            
-            if (page == "settings") { IsMenuOpen = true; MenuTab = "settings"; StateHasChanged(); return; }
-            if (page == "network") { IsMenuOpen = true; MenuTab = "network"; StateHasChanged(); return; }
+            targetUrl = "lumina-app://localhost/downloads";
+        }
+        else if (targetUrl.Equals("lumina history", StringComparison.OrdinalIgnoreCase) || 
+                 targetUrl.Equals("history", StringComparison.OrdinalIgnoreCase))
+        {
+             targetUrl = "lumina-app://localhost/history";
+        }
+        else if (targetUrl.Equals("lumina favorites", StringComparison.OrdinalIgnoreCase) || 
+                 targetUrl.Equals("favorites", StringComparison.OrdinalIgnoreCase))
+        {
+             targetUrl = "lumina-app://localhost/favorites";
+        }
+         else if (targetUrl.Equals("lumina settings", StringComparison.OrdinalIgnoreCase) || 
+                 targetUrl.Equals("settings", StringComparison.OrdinalIgnoreCase))
+        {
+             targetUrl = "lumina-app://localhost/settings";
+        }
+        else if (targetUrl.Equals("lumina network", StringComparison.OrdinalIgnoreCase) || 
+                 targetUrl.Equals("network", StringComparison.OrdinalIgnoreCase))
+        {
+             targetUrl = "lumina-app://localhost/network";
         }
         
+        // Standardize lumina:// to lumina-app://localhost/
+        if (targetUrl.StartsWith("lumina:", StringComparison.OrdinalIgnoreCase))
+        {
+             if (targetUrl.StartsWith("lumina://", StringComparison.OrdinalIgnoreCase))
+                 targetUrl = targetUrl.Replace("lumina://", "lumina-app://localhost/");
+             else
+                 targetUrl = targetUrl.Replace("lumina:", "lumina-app://localhost/");
+        }
+        else if (targetUrl.StartsWith("lumina-app:", StringComparison.OrdinalIgnoreCase))
+        {
+             // Standardize prefix
+             if (!targetUrl.StartsWith("lumina-app://", StringComparison.OrdinalIgnoreCase))
+             {
+                 targetUrl = targetUrl.Replace("lumina-app:", "lumina-app://");
+             }
+
+             // Ensure it has localhost authority for same-origin policy
+             if (!targetUrl.Contains("lumina-app://localhost/"))
+             {
+                 var rest = targetUrl.Substring("lumina-app://".Length);
+                 if (!rest.StartsWith("localhost/"))
+                 {
+                     targetUrl = "lumina-app://localhost/" + rest;
+                 }
+             }
+        }
+
         // Basic Smart Search / Omnibox Logic
         bool isUrl = false;
         
@@ -1092,7 +1207,8 @@
             if (targetUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
                 targetUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
                 targetUrl.StartsWith("file://", StringComparison.OrdinalIgnoreCase) ||
-                targetUrl.StartsWith("lumina://", StringComparison.OrdinalIgnoreCase))
+                targetUrl.StartsWith("lumina:", StringComparison.OrdinalIgnoreCase) ||
+                targetUrl.StartsWith("lumina-app:", StringComparison.OrdinalIgnoreCase))
             {
                 isUrl = true;
             }
@@ -1136,7 +1252,14 @@
         Console.WriteLine($"Navigating tab {ActiveTabId} to: {targetUrl}");
         try
         {
-            await JsRuntime.InvokeVoidAsync("__TAURI__.core.invoke", "navigate", new { label = ActiveTabId, url = targetUrl });
+            if (targetUrl.StartsWith("lumina-app://", StringComparison.OrdinalIgnoreCase))
+            {
+                await JsRuntime.InvokeVoidAsync("__TAURI__.core.invoke", "force_internal_navigate", new { label = ActiveTabId, url = targetUrl });
+            }
+            else
+            {
+                await JsRuntime.InvokeVoidAsync("__TAURI__.core.invoke", "navigate", new { label = ActiveTabId, url = targetUrl });
+            }
         }
         catch (Exception ex)
         {

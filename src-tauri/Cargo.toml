@@ -1,6 +1,6 @@
 [package]
 name = "lumina-browser"
-version = "0.3.2"
+version = "0.3.3"
 description = "A next-generation browser built with Tauri and Blazor"
 authors = ["Nazim"]
 edition = "2021"

@@ -1,0 +1,1 @@
+pyinstaller --noconfirm --onefile --windowed --name "LuminaSidekick" --icon="..\src-tauri\icons\icon.ico" --uac-admin --hidden-import="moviepy" --hidden-import="proglog" --hidden-import="tqdm" --add-data "main.py;." main.py
