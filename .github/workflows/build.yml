@@ -98,9 +98,33 @@ jobs:
           # Nuitka Build
           if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
              python -m nuitka --onefile --standalone --enable-plugin=pyside6 --windows-console-mode=disable --windows-icon-from-ico=../src-tauri/icons/icon.ico --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.exe main.py
+             
+             if [ ! -f "LuminaSidekick.exe" ]; then
+                 echo "Error: LuminaSidekick.exe was not created!"
+                 ls -la
+                 exit 1
+             fi
+             
              cp LuminaSidekick.exe ../src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           else
+             # Linux/macOS
              python -m nuitka --onefile --standalone --enable-plugin=pyside6 --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.bin main.py
+             
+             # Debug output
+             echo "Nuitka build finished. Listing directory:"
+             ls -la
+             
+             if [ ! -f "LuminaSidekick.bin" ]; then
+                 echo "Error: LuminaSidekick.bin was not created! Checking for binary without extension..."
+                 if [ -f "LuminaSidekick" ]; then
+                     echo "Found LuminaSidekick without extension. Renaming..."
+                     mv LuminaSidekick LuminaSidekick.bin
+                 else
+                     echo "Error: No binary found!"
+                     exit 1
+                 fi
+             fi
+             
              cp LuminaSidekick.bin ../src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           fi
           

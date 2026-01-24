@@ -27,9 +27,9 @@
   "bundle": {
     "active": true,
     "externalBin": [
-      "binaries/kip-lang",
-      "binaries/lumina-net",
-      "binaries/lumina-sidekick"
+      "kip-lang",
+      "lumina-net",
+      "lumina-sidekick"
     ],
     "targets": [
       "nsis",
