@@ -1,4 +1,6 @@
 PyQt6
 psutil
 moviepy
-pyinstaller
+nuitka
+zstandard
+ordered-set

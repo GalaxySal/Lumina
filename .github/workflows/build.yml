@@ -83,22 +83,21 @@ jobs:
           go build -o ../src-tauri/binaries/lumina-net-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }} main.go
           cd ..
           
-          # Build Lumina Sidekick (Python)
-          echo "Building Lumina Sidekick..."
+          # Build Lumina Sidekick (Python) using Nuitka
+          echo "Building Lumina Sidekick with Nuitka..."
           pip install -r src-sidekick/requirements.txt
-          pip install pyinstaller
           
           cd src-sidekick
+          
+          # Nuitka Build
           if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-             pyinstaller --noconfirm --onefile --windowed --name "LuminaSidekick" --icon="../src-tauri/icons/icon.ico" --uac-admin --hidden-import="moviepy" --hidden-import="proglog" --hidden-import="tqdm" --add-data "main.py;." main.py
+             python -m nuitka --onefile --standalone --enable-plugin=pyqt6 --windows-console-mode=disable --windows-icon-from-ico=../src-tauri/icons/icon.ico --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.exe main.py
+             cp LuminaSidekick.exe ../src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           else
-             pyinstaller --noconfirm --onefile --windowed --name "LuminaSidekick" --hidden-import="moviepy" --hidden-import="proglog" --hidden-import="tqdm" --add-data "main.py:." main.py
+             python -m nuitka --onefile --standalone --enable-plugin=pyqt6 --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.bin main.py
+             cp LuminaSidekick.bin ../src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           fi
           
-          echo "Listing dist folder:"
-          ls -R dist
-          
-          cp dist/LuminaSidekick${{ env.EXE_EXT }} ../src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           cd .. 
 
       - name: Debug Binaries (Linux/Mac)
