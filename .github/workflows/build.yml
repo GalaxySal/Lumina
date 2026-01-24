@@ -35,7 +35,7 @@ jobs:
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2
         with:
-          version: 0.11.0
+          version: 0.13.0
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
@@ -94,8 +94,19 @@ jobs:
           else
              pyinstaller --noconfirm --onefile --windowed --name "LuminaSidekick" --hidden-import="moviepy" --hidden-import="proglog" --hidden-import="tqdm" --add-data "main.py:." main.py
           fi
+          
+          echo "Listing dist folder:"
+          ls -R dist
+          
           cp dist/LuminaSidekick${{ env.EXE_EXT }} ../src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           cd .. 
+
+      - name: Debug Binaries (Linux/Mac)
+        if: matrix.platform != 'windows-latest'
+        run: |
+           echo "Checking src-tauri/binaries:"
+           ls -l src-tauri/binaries/
+           chmod +x src-tauri/binaries/* 
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
