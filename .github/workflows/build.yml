@@ -131,8 +131,26 @@ jobs:
           cd .. 
           
           echo "Verifying binaries..."
-          ls -l src-tauri/binaries/ 
+          ls -l src-tauri/binaries/
+          
+          # Verify Kip
+          if [ ! -f "src-tauri/binaries/kip-lang-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}" ]; then
+              echo "Error: kip-lang binary missing at src-tauri/binaries/kip-lang-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}"
+              exit 1
+          fi
 
+          # Verify Lumina-Net
+          if [ ! -f "src-tauri/binaries/lumina-net-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}" ]; then
+              echo "Error: lumina-net binary missing at src-tauri/binaries/lumina-net-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}"
+              exit 1
+          fi
+
+          # Verify Sidekick
+          if [ ! -f "src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}" ]; then
+              echo "Error: lumina-sidekick binary missing at src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}"
+              exit 1
+          fi
+          
       - name: Debug Binaries (Linux/Mac)
         if: matrix.platform != 'windows-latest'
         run: |
