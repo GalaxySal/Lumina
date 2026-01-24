@@ -109,7 +109,7 @@ if (Test-Path $SidekickDir) {
 
         # Build command using Nuitka
         Write-Host "Running Nuitka build..." -ForegroundColor Gray
-        $NuitkaCmd = "python -m nuitka --onefile --standalone --enable-plugin=pyside6 --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=$OutputName main.py"
+        $NuitkaCmd = "python -m nuitka --assume-yes-for-downloads --onefile --standalone --enable-plugin=pyside6 --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=$OutputName main.py"
         
         if ($TargetTriple -match "windows") {
             $NuitkaCmd += " --windows-console-mode=disable --windows-icon-from-ico=../src-tauri/icons/icon.ico"
