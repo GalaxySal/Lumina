@@ -79,6 +79,7 @@ jobs:
           # Build Lumina-Net (Go)
           echo "Building Lumina-Net..."
           cd src-go
+          rm -f ../src-tauri/binaries/lumina-net-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           go build -o ../src-tauri/binaries/lumina-net-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }} main.go
           cd ..
           
