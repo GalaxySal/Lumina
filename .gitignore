@@ -211,3 +211,11 @@ Backup*/
 
 # Frontend build output
 dist/
+
+# Python / Sidekick
+__pycache__/
+*.py[cod]
+*$py.class
+src-sidekick/build/
+src-sidekick/dist/
+*.spec
