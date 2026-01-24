@@ -42,6 +42,12 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
       - name: Determine Sidecar Target
         shell: bash
         run: |
@@ -74,6 +80,20 @@ jobs:
           echo "Building Lumina-Net..."
           cd src-go
           go build -o ../src-tauri/binaries/lumina-net-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }} main.go
+          cd ..
+          
+          # Build Lumina Sidekick (Python)
+          echo "Building Lumina Sidekick..."
+          pip install -r src-sidekick/requirements.txt
+          pip install pyinstaller
+          
+          cd src-sidekick
+          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+             pyinstaller --noconfirm --onefile --windowed --name "LuminaSidekick" --icon="../src-tauri/icons/icon.ico" --uac-admin --hidden-import="moviepy" --hidden-import="proglog" --hidden-import="tqdm" --add-data "main.py;." main.py
+          else
+             pyinstaller --noconfirm --onefile --windowed --name "LuminaSidekick" --hidden-import="moviepy" --hidden-import="proglog" --hidden-import="tqdm" --add-data "main.py:." main.py
+          fi
+          cp dist/LuminaSidekick${{ env.EXE_EXT }} ../src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           cd .. 
 
       - name: Install dependencies (Ubuntu only)

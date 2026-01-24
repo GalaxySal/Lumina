@@ -1,17 +1,15 @@
 # Auto-detect text files and perform LF normalization
 * text=auto
-
 # Zig
 *.zig linguist-language=Zig
-
 # Razor / Blazor
 *.razor linguist-language=C#
 *.cshtml linguist-language=C#
-
-
 # Rust
 *.rs linguist-language=Rust
-
 # Documentation
 *.md linguist-documentation
 LICENSE linguist-documentation
+*.pkg filter=lfs diff=lfs merge=lfs -text
+src-tauri/binaries/*.exe filter=lfs diff=lfs merge=lfs -text
+src-sidekick/dist/*.exe filter=lfs diff=lfs merge=lfs -text
