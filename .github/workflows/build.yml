@@ -66,6 +66,12 @@ jobs:
             echo "EXE_EXT=" >> $GITHUB_ENV
           fi
 
+      - name: Install dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev build-essential curl wget libssl-dev file patchelf
+
       - name: Build Sidecars
         shell: bash
         run: |
@@ -106,12 +112,6 @@ jobs:
            echo "Checking src-tauri/binaries:"
            ls -l src-tauri/binaries/
            chmod +x src-tauri/binaries/* 
-
-      - name: Install dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev build-essential curl wget libssl-dev file
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0" --locked
