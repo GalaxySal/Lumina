@@ -1,4 +1,8 @@
 # scripts/build-sidecars.ps1
+param (
+    [string]$Mode = "Build" # Options: "Build", "Mock"
+)
+
 $ErrorActionPreference = "Stop"
 
 # Determine Root Directory (One level up from scripts/)
@@ -24,7 +28,29 @@ try {
 $Ext = ""
 if ($TargetTriple -match "windows") { $Ext = ".exe" }
 
+# Function to create mock binary
+function New-MockBinary {
+    param ($Name)
+    $Path = Join-Path $BinDir "$Name-$TargetTriple$Ext"
+    Set-Content -Path $Path -Value "Mock Binary for CI/Clippy"
+    Write-Host "✅ Created Mock Binary: $Path" -ForegroundColor Magenta
+}
+
 # ---------------------------------------------------------
+# MOCK MODE
+# ---------------------------------------------------------
+if ($Mode -eq "Mock") {
+    Write-Host "`n🧪 Running in MOCK mode - creating dummy binaries for CI..." -ForegroundColor Magenta
+    New-MockBinary "lumina-net"
+    New-MockBinary "kip-lang"
+    New-MockBinary "lumina-sidekick"
+    exit 0
+}
+
+# ---------------------------------------------------------
+# BUILD MODE
+# ---------------------------------------------------------
+
 # 1. Build Go Sidecar (lumina-net)
 # ---------------------------------------------------------
 Write-Host "`n🔨 Building Go Sidecar (lumina-net)..." -ForegroundColor Yellow

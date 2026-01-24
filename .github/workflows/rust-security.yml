@@ -51,9 +51,9 @@ jobs:
         with:
           version: 0.11.0
 
-      - name: Build Sidecars
+      - name: Build Sidecars (Mock)
         shell: pwsh
-        run: ./scripts/build-sidecars.ps1
+        run: ./scripts/build-sidecars.ps1 -Mode Mock
 
       - name: Run clippy
         run: cargo clippy -- -D warnings
