@@ -46,8 +46,10 @@ fn harden_process() {
 
 #[cfg(windows)]
 unsafe fn check_memory_status() {
-    let mut mem_status = MEMORYSTATUSEX::default();
-    mem_status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+    let mut mem_status = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        ..Default::default()
+    };
 
     if GlobalMemoryStatusEx(&mut mem_status).is_ok() {
         let total_mb = mem_status.ullTotalPhys / 1024 / 1024;
