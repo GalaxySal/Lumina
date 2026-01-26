@@ -4,16 +4,19 @@ namespace tauri_browser.Models
 {
     public class SuggestionItem
     {
-        [JsonPropertyName("title")]
-        public string Title { get; set; } = "";
-        
-        [JsonPropertyName("url")]
-        public string Url { get; set; } = "";
-        
         [JsonPropertyName("icon")]
         public string Icon { get; set; } = "";
-        
-        [JsonPropertyName("type")]
-        public string Type { get; set; } = "";
+
+        [JsonPropertyName("title")]
+        public string Title { get; set; } = "";
+
+        [JsonPropertyName("url")]
+        public string Url { get; set; } = "";
+    }
+
+    public class OmniboxResponse
+    {
+        [JsonPropertyName("suggestions")]
+        public List<SuggestionItem> Suggestions { get; set; } = [];
     }
 }

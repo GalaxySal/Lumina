@@ -1,0 +1,43 @@
+[
+  {
+    "id": "init-script",
+    "title": "Dev Starter Pack",
+    "author": "@safkanyapi",
+    "description": "Essential initialization scripts for Lua development. Includes debug helpers and environment checks.",
+    "icon": "🚀",
+    "version": "1.0.0",
+    "tags": ["System", "Lua"],
+    "verified": true
+  },
+  {
+    "id": "adshield",
+    "title": "AdShield Pro",
+    "author": "@community",
+    "description": "Enhanced filter lists for Turkish media sites. Blocks aggressive trackers and mining scripts.",
+    "icon": "🛡️",
+    "version": "2.1.0",
+    "tags": ["Privacy", "Filters"],
+    "verified": false
+  },
+  {
+    "id": "night-owl",
+    "title": "Night Owl",
+    "author": "@nightwalker",
+    "description": "Forces dark mode on all internal pages and supported websites via CSS injection.",
+    "icon": "🌙",
+    "version": "1.2.0",
+    "tags": ["Theme", "CSS"],
+    "verified": false
+  },
+  {
+    "id": "local-brain",
+    "title": "Local Brain (Phi-2)",
+    "author": "@lumina_ai",
+    "description": "Run LLMs locally on your device. Zero data leaves your machine. (Coming Soon)",
+    "icon": "🧠",
+    "version": "0.1.0-alpha",
+    "tags": ["AI", "Experimental"],
+    "verified": true,
+    "comingSoon": true
+  }
+]

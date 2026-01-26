@@ -1,0 +1,252 @@
+@page "/store"
+@using tauri_browser.Models
+@using tauri_browser.Services
+@inject TauriService Tauri
+@inject NavigationManager Nav
+
+<div class="store-layout">
+    <aside class="store-sidebar">
+        <div class="sidebar-section">
+            <div class="sidebar-title">Categories</div>
+            <ul class="category-list">
+                <li class="@(SelectedTag == null ? "active" : "")" @onclick="() => SelectTag(null)">
+                    <span class="cat-icon">apps</span> All Extensions
+                </li>
+                @foreach (var tag in UniqueTags)
+                {
+                    <li class="@(SelectedTag == tag ? "active" : "")" @onclick="() => SelectTag(tag)">
+                        <span class="cat-icon">label</span> @tag
+                    </li>
+                }
+            </ul>
+        </div>
+        
+        <div class="sidebar-section">
+            <div class="sidebar-title">Your Library</div>
+            <ul class="category-list">
+                <li><span class="cat-icon">download_done</span> Installed</li>
+                <li><span class="cat-icon">update</span> Updates</li>
+            </ul>
+        </div>
+    </aside>
+
+    <main class="store-main">
+        <header class="store-header">
+            <div>
+                <h1>Lumina Store</h1>
+                <div class="tagline">Secure, Sandboxed, Native Extensions</div>
+            </div>
+            <div class="balance">
+                <span class="label">Balance</span>
+                <span class="amount">0 LUM</span>
+            </div>
+        </header>
+
+        @if (Items == null)
+        {
+            <div class="loading">Loading store items...</div>
+        }
+        else
+        {
+            <div class="store-grid">
+                @foreach (var item in FilteredItems)
+                {
+                    <div class="store-card @(item.ComingSoon ? "coming-soon" : "")">
+                        <div class="card-header">
+                            <div class="icon">@item.Icon</div>
+                            <div class="info">
+                                <h3>@item.Title</h3>
+                                <div class="author">by @item.Author</div>
+                            </div>
+                            @if (item.Verified)
+                            {
+                                <div class="badge-verified" title="Verified Safe">✓ Verified</div>
+                            }
+                        </div>
+                        <div class="desc">@item.Description</div>
+                        <div class="meta">
+                            @foreach (var tag in item.Tags)
+                            {
+                                <span class="tag" @onclick="() => SelectTag(tag)" @onclick:stopPropagation="true">@tag</span>
+                            }
+                            <span class="version">v@item.Version</span>
+                        </div>
+                        <div class="actions">
+                            @if (item.ComingSoon)
+                            {
+                                <button class="btn btn-disabled" disabled>Coming Soon</button>
+                            }
+                            else if (item.Installed)
+                            {
+                                <button class="btn btn-secondary" disabled>Installed</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-primary" @onclick="() => InstallItem(item)">Install</button>
+                            }
+                        </div>
+                    </div>
+                }
+                
+                @if (Items.Any() && !FilteredItems.Any())
+                {
+                    <div class="empty-results">
+                        No extensions found for category "@SelectedTag"
+                    </div>
+                }
+            </div>
+        }
+    </main>
+</div>
+
+<style>
+    .store-layout {
+        display: flex;
+        min-height: 100vh;
+        background: #0f172a; /* Ensure background covers full height */
+    }
+    
+    /* Sidebar */
+    .store-sidebar {
+        width: 260px;
+        background: #1e293b;
+        border-right: 1px solid #334155;
+        padding: 32px 20px;
+        flex-shrink: 0;
+    }
+    
+    .sidebar-section { margin-bottom: 32px; }
+    .sidebar-title { 
+        font-size: 0.85rem; 
+        text-transform: uppercase; 
+        letter-spacing: 1px; 
+        color: #64748b; 
+        margin-bottom: 16px; 
+        font-weight: 700;
+        padding-left: 12px;
+    }
+    
+    .category-list { list-style: none; padding: 0; margin: 0; }
+    .category-list li {
+        padding: 10px 12px;
+        border-radius: 8px;
+        color: #94a3b8;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 0.95rem;
+    }
+    .category-list li:hover { background: #334155; color: #e2e8f0; }
+    .category-list li.active { background: #3b82f6; color: white; }
+    
+    .cat-icon { width: 20px; height: 20px; display: inline-block; vertical-align: middle; }
+
+    /* Main Content */
+    .store-main {
+        flex-grow: 1;
+        padding: 32px 48px;
+        overflow-y: auto; /* Allow scrolling independent of sidebar if needed */
+        max-height: 100vh;
+    }
+
+    .store-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 40px;
+        border-bottom: 1px solid #334155;
+        padding-bottom: 20px;
+    }
+    h1 { margin: 0; color: #f8fafc; font-size: 2rem; }
+    .tagline { color: #94a3b8; margin-top: 4px; }
+    .balance { text-align: right; }
+    .amount { display: block; font-size: 1.5rem; font-weight: bold; color: #10b981; }
+    
+    .store-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 24px;
+    }
+    .store-card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .store-card:hover:not(.coming-soon) {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        border-color: #475569;
+    }
+    .coming-soon { opacity: 0.7; border-style: dashed; }
+    
+    .card-header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+    .icon { font-size: 2.5rem; background: #0f172a; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; border-radius: 12px; }
+    .info h3 { margin: 0 0 4px 0; font-size: 1.1rem; color: #f1f5f9; }
+    .author { font-size: 0.85rem; color: #94a3b8; }
+    .badge-verified { color: #10b981; font-size: 0.75rem; margin-left: auto; background: rgba(16, 185, 129, 0.1); padding: 2px 8px; border-radius: 99px; white-space: nowrap; height: fit-content; }
+    
+    .desc { color: #cbd5e1; font-size: 0.95rem; line-height: 1.5; margin-bottom: 20px; flex-grow: 1; }
+    
+    .meta { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+    .tag { background: #334155; color: #e2e8f0; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; cursor: pointer; transition: background 0.2s; }
+    .tag:hover { background: #475569; }
+    .version { margin-left: auto; font-size: 0.75rem; color: #64748b; }
+    
+    .btn { width: 100%; padding: 10px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary { background: #475569; color: #94a3b8; cursor: default; }
+    .btn-disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+    
+    .empty-results { grid-column: 1 / -1; text-align: center; padding: 40px; color: #64748b; font-size: 1.1rem; border: 2px dashed #334155; border-radius: 12px; }
+</style>
+
+@code {
+    private List<StoreItem>? Items;
+    private string? SelectedTag;
+    private List<string> UniqueTags = new();
+
+    private IEnumerable<StoreItem> FilteredItems => string.IsNullOrEmpty(SelectedTag)
+        ? (Items ?? Enumerable.Empty<StoreItem>())
+        : (Items?.Where(i => i.Tags.Contains(SelectedTag)) ?? Enumerable.Empty<StoreItem>());
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            Items = await Tauri.InvokeAsync<List<StoreItem>>("get_store_items");
+            if (Items != null)
+            {
+                UniqueTags = Items.SelectMany(i => i.Tags).Distinct().OrderBy(t => t).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load store: {ex.Message}");
+            Items = new List<StoreItem>();
+        }
+    }
+
+    private void SelectTag(string? tag)
+    {
+        SelectedTag = tag;
+        // Blazor automatically re-renders on event handler completion
+    }
+
+    private async Task InstallItem(StoreItem item)
+    {
+        // Call Rust command
+        await Tauri.InvokeVoidAsync("install_package", new { id = item.Id });
+        
+        // Optimistic update
+        item.Installed = true;
+        StateHasChanged();
+    }
+}
+

@@ -36,5 +36,27 @@ namespace tauri_browser.Services
                 throw;
             }
         }
+
+        public async Task Listen<T>(string eventName, Action<T> handler)
+        {
+            try 
+            {
+                var helper = DotNetObjectReference.Create(new EventCallbackHelper<T>(handler));
+                await _jsRuntime.InvokeVoidAsync("lumina.listen", eventName, helper);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Tauri Listen Error [{eventName}]: {ex.Message}");
+            }
+        }
+    }
+
+    public class EventCallbackHelper<T>
+    {
+        private readonly Action<T> _action;
+        public EventCallbackHelper(Action<T> action) { _action = action; }
+        
+        [JSInvokable]
+        public void OnEvent(T payload) => _action(payload);
     }
 }

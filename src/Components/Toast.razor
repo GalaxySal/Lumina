@@ -1,0 +1,90 @@
+@using tauri_browser.Services
+@using tauri_browser.Models
+@inject TauriService Tauri
+@implements IDisposable
+
+@if (Show)
+{
+    <div class="toast-notification @Payload.Level">
+        <div class="toast-icon">
+            @if (Payload.Level == "success") { <span>✓</span> }
+            else { <span>ℹ</span> }
+        </div>
+        <div class="toast-content">
+            @Payload.Message
+        </div>
+        <button class="toast-close" @onclick="Close">×</button>
+    </div>
+}
+
+<style>
+    .toast-notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #1e293b;
+        color: #f1f5f9;
+        padding: 16px 24px;
+        border-radius: 8px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        z-index: 9999;
+        border-left: 4px solid #3b82f6;
+        animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        min-width: 300px;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    .toast-notification.success { border-left-color: #10b981; }
+    .toast-notification.error { border-left-color: #ef4444; }
+    
+    .toast-icon { font-size: 1.2rem; font-weight: bold; }
+    .toast-content { flex-grow: 1; font-size: 0.95rem; }
+    .toast-close { background: none; border: none; color: #94a3b8; font-size: 1.5rem; cursor: pointer; padding: 0; line-height: 1; }
+    .toast-close:hover { color: white; }
+    
+    @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+</style>
+
+@code {
+    private bool Show = false;
+    private ToastPayload Payload = new();
+    private System.Timers.Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Tauri.Listen("toast", (ToastPayload p) => {
+            Payload = p;
+            Show = true;
+            StateHasChanged();
+            StartTimer();
+        });
+    }
+
+    private void StartTimer()
+    {
+        _timer?.Dispose();
+        _timer = new System.Timers.Timer(4000);
+        _timer.Elapsed += (s, e) => {
+            Show = false;
+            InvokeAsync(StateHasChanged);
+            _timer.Dispose();
+        };
+        _timer.Start();
+    }
+
+    private void Close()
+    {
+        Show = false;
+        _timer?.Dispose();
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

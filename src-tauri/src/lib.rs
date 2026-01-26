@@ -45,6 +45,58 @@ fn create_lua_runtime() -> Lua {
     lua
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct StoreItem {
+    pub id: String,
+    pub title: String,
+    pub author: String,
+    pub description: String,
+    pub icon: String,
+    pub version: String,
+    pub tags: Vec<String>,
+    pub verified: bool,
+    #[serde(default)]
+    pub installed: bool,
+    #[serde(default, rename = "comingSoon")]
+    pub coming_soon: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ToastPayload {
+    pub message: String,
+    pub level: String,
+}
+
+#[tauri::command]
+fn get_store_items(app: AppHandle) -> Vec<StoreItem> {
+    let paths = vec![
+        PathBuf::from("store.json"),
+        PathBuf::from("data/store.json"),
+        app.path().app_data_dir().unwrap_or_default().join("store.json"),
+        PathBuf::from("src-tauri/store.json"),
+    ];
+
+    for path in paths {
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(items) = serde_json::from_str::<Vec<StoreItem>>(&content) {
+                    return items;
+                }
+            }
+        }
+    }
+    Vec::new()
+}
+
+#[tauri::command]
+fn install_package(app: AppHandle, id: String) {
+    println!("Lumina Command: Installing {}", id);
+    let _ = app.emit("toast", ToastPayload {
+        message: format!("Sidekick modülü güvenle kuruldu: {}", id),
+        level: "success".to_string(),
+    });
+}
+
 #[derive(Clone, serde::Serialize)]
 struct AdblockStatsPayload {
     label: String,
@@ -524,6 +576,137 @@ fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
                 </body>
                 </html>"#,
                 lumina_style, items_html
+            ))
+        },
+        "store" => {
+            // Lumina Web-Store (No-JS)
+            let store_css = r#"
+                body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; }
+                .container { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+                header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; border-bottom: 1px solid #334155; padding-bottom: 20px; }
+                h1 { margin: 0; font-size: 2.5rem; background: linear-gradient(to right, #3b82f6, #10b981); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+                .tagline { color: #94a3b8; font-size: 1.1rem; }
+                .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; }
+                .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; transition: transform 0.2s, border-color 0.2s; position: relative; overflow: hidden; }
+                .card:hover { transform: translateY(-4px); border-color: #3b82f6; }
+                .card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+                .icon { width: 48px; height: 48px; background: #334155; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+                .card h3 { margin: 0; font-size: 1.25rem; color: #f8fafc; }
+                .author { font-size: 0.875rem; color: #64748b; margin-top: 4px; }
+                .desc { color: #cbd5e1; line-height: 1.5; margin-bottom: 20px; font-size: 0.95rem; }
+                .meta { display: flex; gap: 12px; font-size: 0.8rem; color: #64748b; margin-bottom: 20px; }
+                .tag { background: #334155; padding: 2px 8px; border-radius: 4px; color: #94a3b8; }
+                .btn { display: block; text-align: center; background: #3b82f6; color: white; text-decoration: none; padding: 10px; border-radius: 8px; font-weight: 600; transition: background 0.2s; }
+                .btn:hover { background: #2563eb; }
+                .btn.installed { background: #10b981; pointer-events: none; opacity: 0.8; }
+                .badge-verified { color: #10b981; display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; margin-left: auto; }
+            "#;
+
+            Some(format!(
+                r##"<!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Lumina Store</title>
+                    <meta charset="UTF-8">
+                    <style>{}</style>
+                </head>
+                <body>
+                    <div class="container">
+                        <header>
+                            <div>
+                                <h1>Lumina Store</h1>
+                                <div class="tagline">Secure, Sandboxed, No-JS Extensions</div>
+                            </div>
+                            <div style="text-align: right">
+                                <div style="font-size: 0.9rem; color: #94a3b8;">Balance</div>
+                                <div style="font-size: 1.2rem; font-weight: bold;">0 LUM</div>
+                            </div>
+                        </header>
+
+                        <div class="grid">
+                            <!-- Item 1: Init Script -->
+                            <div class="card">
+                                <div class="card-header">
+                                    <div class="icon">🚀</div>
+                                    <div>
+                                        <h3>Dev Starter Pack</h3>
+                                        <div class="author">by @safkanyapi</div>
+                                    </div>
+                                    <div class="badge-verified">✓ Verified</div>
+                                </div>
+                                <div class="desc">
+                                    Essential initialization scripts for Lua development. Includes debug helpers and environment checks.
+                                </div>
+                                <div class="meta">
+                                    <span class="tag">System</span>
+                                    <span class="tag">Lua</span>
+                                    <span class="tag">v1.0.0</span>
+                                </div>
+                                <a href="lumina-app://install?id=init-script" class="btn">Install</a>
+                            </div>
+
+                            <!-- Item 2: Adblock Plus -->
+                            <div class="card">
+                                <div class="card-header">
+                                    <div class="icon">🛡️</div>
+                                    <div>
+                                        <h3>AdShield Pro</h3>
+                                        <div class="author">by @community</div>
+                                    </div>
+                                </div>
+                                <div class="desc">
+                                    Enhanced filter lists for Turkish media sites. Blocks aggressive trackers and mining scripts.
+                                </div>
+                                <div class="meta">
+                                    <span class="tag">Privacy</span>
+                                    <span class="tag">Filters</span>
+                                    <span class="tag">v2.1.0</span>
+                                </div>
+                                <a href="lumina-app://install?id=adshield" class="btn">Install</a>
+                            </div>
+
+                            <!-- Item 3: Offline AI (Placeholder) -->
+                            <div class="card" style="opacity: 0.7; border-style: dashed;">
+                                <div class="card-header">
+                                    <div class="icon">🧠</div>
+                                    <div>
+                                        <h3>Local Brain (Phi-2)</h3>
+                                        <div class="author">by @lumina_ai</div>
+                                    </div>
+                                </div>
+                                <div class="desc">
+                                    Run LLMs locally on your device. Zero data leaves your machine. (Coming Soon)
+                                </div>
+                                <div class="meta">
+                                    <span class="tag">AI</span>
+                                    <span class="tag">Experimental</span>
+                                </div>
+                                <a href="#" class="btn" style="background: #475569; cursor: not-allowed;">Coming Soon</a>
+                            </div>
+                            
+                            <!-- Item 4: Dark Reader -->
+                            <div class="card">
+                                <div class="card-header">
+                                    <div class="icon">🌙</div>
+                                    <div>
+                                        <h3>Night Owl</h3>
+                                        <div class="author">by @nightwalker</div>
+                                    </div>
+                                </div>
+                                <div class="desc">
+                                    Forces dark mode on all internal pages and supported websites via CSS injection.
+                                </div>
+                                <div class="meta">
+                                    <span class="tag">Theme</span>
+                                    <span class="tag">CSS</span>
+                                </div>
+                                <a href="lumina-app://install?id=night-owl" class="btn">Install</a>
+                            </div>
+                        </div>
+                    </div>
+                </body>
+                </html>"##,
+                store_css
             ))
         },
         "settings" => {
@@ -3064,7 +3247,7 @@ pub fn run() {
             let full_path = path_and_query.trim_start_matches('/');
             
             // Split path and query/hash
-            let (path, _query) = if let Some(idx) = full_path.find('?') {
+            let (path, query) = if let Some(idx) = full_path.find('?') {
                 (&full_path[..idx], &full_path[idx..])
             } else if let Some(idx) = full_path.find('#') {
                  (&full_path[..idx], &full_path[idx..])
@@ -3073,6 +3256,61 @@ pub fn run() {
             };
             
             let path = path.trim_end_matches('/');
+
+            // Store Installation Handler
+            if path == "install" {
+                 let id = if let Some(idx) = query.find("id=") {
+                     let rest = &query[idx + 3..];
+                     rest.split('&').next().unwrap_or(rest)
+                 } else {
+                     "unknown"
+                 };
+                 
+                 println!("Lumina Store: Installing {}", id);
+                 
+                 // Emit Toast Event to Frontend
+                 let _ = ctx.app_handle().emit("toast", ToastPayload {
+                     message: format!("Sidekick modülü güvenle kuruldu: {}", id),
+                     level: "success".to_string(),
+                 });
+
+                 // Mock Installation Logic - In a real app, this would download files or enable features
+                 // For now, we simulate a delay and success
+                 
+                 let success_html = format!(r#"
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>Installation Complete</title>
+                        <meta charset="UTF-8">
+                        <style>
+                            body {{ font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }}
+                            .card {{ background: #1e293b; padding: 40px; border-radius: 16px; text-align: center; border: 1px solid #334155; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }}
+                            @keyframes popIn {{ from {{ transform: scale(0.8); opacity: 0; }} to {{ transform: scale(1); opacity: 1; }} }}
+                            h1 {{ color: #10b981; margin: 0 0 16px 0; font-size: 2rem; }}
+                            p {{ color: #94a3b8; margin-bottom: 24px; }}
+                            .btn {{ background: #3b82f6; color: white; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: 600; transition: background 0.2s; display: inline-block; }}
+                            .btn:hover {{ background: #2563eb; }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="card">
+                            <div style="font-size: 4rem; margin-bottom: 10px;">🎉</div>
+                            <h1>Installation Complete</h1>
+                            <p>Package <strong>{}</strong> has been successfully installed.</p>
+                            <a href="lumina-app://store" class="btn">Return to Store</a>
+                        </div>
+                    </body>
+                    </html>
+                 "#, id);
+                 
+                 return tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", "text/html; charset=utf-8")
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(success_html.into_bytes())
+                    .unwrap();
+            }
 
             println!("Lumina-App Path: {}", path); // DEBUG LOG
 
@@ -3102,6 +3340,29 @@ pub fn run() {
         .setup(|app| {
             // Initialize Lua (Real Runtime)
             app.manage(LuaState { lua: Mutex::new(create_lua_runtime()) });
+
+            // Load scripts/init.lua if exists
+            let lua_state = app.state::<LuaState>();
+            if let Ok(lua) = lua_state.lua.lock() {
+                // Try to find init.lua in current dir (dev) or app data dir (prod)
+                let paths = vec![
+                    std::path::PathBuf::from("scripts/init.lua"),
+                    app.path().app_data_dir().unwrap_or_default().join("scripts/init.lua"),
+                ];
+
+                for path in paths {
+                    if path.exists() {
+                        if let Ok(script) = std::fs::read_to_string(&path) {
+                            println!("Executing Lua script: {:?}", path);
+                            if let Err(e) = lua.load(&script).exec() {
+                                eprintln!("Error executing Lua script {:?}: {}", path, e);
+                            } else {
+                                break; // Loaded successfully, stop looking
+                            }
+                        }
+                    }
+                }
+            }
 
             // Initialize Sidekick Communication Channel
             let (sidekick_tx, mut sidekick_rx) = tokio::sync::mpsc::channel::<String>(32);
@@ -3479,7 +3740,9 @@ pub fn run() {
             run_networking_command,
             run_sidekick,
             request_omnibox_suggestions,
-            run_lua_code
+            run_lua_code,
+            get_store_items,
+            install_package
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
