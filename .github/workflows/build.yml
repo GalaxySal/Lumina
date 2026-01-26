@@ -104,6 +104,21 @@ jobs:
           # Build Lumina Sidekick (Python) using Nuitka
           echo "Building Lumina Sidekick with Nuitka..."
           pip install --upgrade pip setuptools wheel cmake ninja
+          
+          # Install llama-cpp-python with platform-specific optimizations/wheels
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+              echo "Installing llama-cpp-python for macOS (Metal)..."
+              # Try to use pre-built Metal wheel, fallback to build with Metal enabled
+              CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir --prefer-binary --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/metal
+          elif [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+              echo "Installing llama-cpp-python for Windows..."
+              # Use CPU/CUDA wheel if available, or build
+              pip install llama-cpp-python --force-reinstall --prefer-binary --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+          else
+              echo "Installing llama-cpp-python for Linux..."
+              pip install llama-cpp-python --force-reinstall --prefer-binary --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+          fi
+          
           pip install -r src-sidekick/requirements.txt
           
           cd src-sidekick
