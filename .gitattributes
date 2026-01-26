@@ -1,18 +1,54 @@
 # Auto-detect text files and perform LF normalization
 * text=auto
-# Zig
-*.zig linguist-language=Zig
 
-# Go
+# Core Languages - Explicit Definition
+*.zig linguist-language=Zig
 *.go linguist-language=Go
-# Razor / Blazor
+*.rs linguist-language=Rust
+*.hs linguist-language=Haskell
+*.py linguist-language=Python
+*.cs linguist-language=C#
 *.razor linguist-language=C#
 *.cshtml linguist-language=C#
-# Rust
-*.rs linguist-language=Rust
+
+# Generated & Config Files (Exclude from Language Stats)
+# Lock files often skew stats as "Other" or "TOML"
+Cargo.lock linguist-generated
+go.sum linguist-generated
+package-lock.json linguist-generated
+yarn.lock linguist-generated
+pnpm-lock.yaml linguist-generated
+
+# IDE & Build Configs
+*.csproj linguist-generated
+*.sln linguist-generated
+*.json linguist-generated
+*.xml linguist-generated
+*.yaml linguist-generated
+*.yml linguist-generated
+*.toml linguist-generated
+*.cabal linguist-generated
+Makefile linguist-generated
+Dockerfile linguist-generated
+
 # Documentation
 *.md linguist-documentation
 LICENSE linguist-documentation
+
+# Binaries & Large Files (LFS & Generated)
 *.pkg filter=lfs diff=lfs merge=lfs -text
-src-tauri/binaries/*.exe filter=lfs diff=lfs merge=lfs -text
-src-sidekick/dist/*.exe filter=lfs diff=lfs merge=lfs -text
+*.exe filter=lfs diff=lfs merge=lfs -text linguist-generated
+*.dll filter=lfs diff=lfs merge=lfs -text linguist-generated
+*.pdb filter=lfs diff=lfs merge=lfs -text linguist-generated
+*.so filter=lfs diff=lfs merge=lfs -text linguist-generated
+*.dylib filter=lfs diff=lfs merge=lfs -text linguist-generated
+*.bin filter=lfs diff=lfs merge=lfs -text linguist-generated
+*.dat filter=lfs diff=lfs merge=lfs -text linguist-generated
+
+# Assets (Exclude from code stats if desired, or leave as is. Marking generated reduces noise)
+*.svg linguist-generated
+*.png linguist-generated
+*.ico linguist-generated
+
+# Custom / Experimental
+*.kip linguist-generated
