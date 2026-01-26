@@ -2,6 +2,16 @@
 
 ![Lumina Logo](lumina_logo.png)
 
+[![Rust](https://img.shields.io/badge/Rust-Core-orange?logo=rust)](https://www.rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-v2-blue?logo=tauri)](https://tauri.app/)
+[![.NET 8](https://img.shields.io/badge/.NET-8.0-purple?logo=dotnet)](https://dotnet.microsoft.com/)
+[![Blazor](https://img.shields.io/badge/Blazor-WASM-512BD4?logo=blazor)](https://dotnet.microsoft.com/apps/aspnet/web-apps/blazor)
+[![Python](https://img.shields.io/badge/Python-Sidekick-yellow?logo=python)](https://www.python.org/)
+[![Go](https://img.shields.io/badge/Go-Networking-00ADD8?logo=go)](https://go.dev/)
+[![Zig](https://img.shields.io/badge/Zig-Sentinel-F7A41D?logo=zig)](https://ziglang.org/)
+[![Haskell](https://img.shields.io/badge/Haskell-Scripting-5D4F85?logo=haskell)](https://www.haskell.org/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
 **Lumina** is a next-generation, high-performance web browser architecture exploring the limits of **Polyglot Engineering**. Built on **Tauri v2**, it orchestrates a symphony of languages—**Rust**, **C#**, **Go**, **Python**, **Zig**, and **Haskell**—to deliver speed, security, and a unique developer experience.
 
 ## 🌟 Key Features
@@ -28,24 +38,36 @@ Lumina follows the "Purebred Structure" (Safkan Yapı) philosophy: **No Node.js*
 
 ### 🎨 Modern Experience
 
-- **Glassmorphism UI:** Translucent, GPU-accelerated visual effects.
+- **Glassmorphism UI:** Translucent, GPU-accelerated visual effects (Acrylic/Mica).
 - **Command Palette (Alt+Space):** Instant access to tabs, commands, and history.
 - **Flash Tab:** Floating overlay for quick lookups without context switching.
 - **Vertical Tabs (Zen Mode):** Optimized screen real estate for wide displays.
-- **OmniBox Smart Search:** Intelligent address bar powered by Python Sidekick, offering real-time math, time, history, and favorite suggestions.
-- **Chrome Extensions (Windows):** Support for loading unpacked Chrome extensions for enhanced browsing.
-- **Lua Scripting:** Built-in sandboxed Lua 5.4 runtime for safe browser automation and extension.
+- **Native Screenshot:** Capture and save screenshots directly via Command Palette without extensions.
+- **Text Scaling:** Adjust UI text size (100%-200%) via Flags for better readability.
+
+### 🧠 Intelligent Omnibox
+
+- **Smart Search:** Intelligent address bar powered by Python Sidekick.
+- **Built-in Calculator:** Perform math operations directly in the address bar (e.g., `(12*5)+50`).
+- **Real-time Suggestions:** History, favorites, and navigation heuristics.
+
+### ⚙️ Power User Tools
+
+- **Lumina Flags (`lumina://flags`):** Advanced configuration page to toggle experimental features (like Firefox's `about:config`).
+- **Tab Pinning:** Pin essential tabs to keep them compact and accessible.
+- **Web-Store (`lumina-app://store`):** Secure environment for discovering extensions.
+- **Lua Scripting:** Built-in sandboxed Lua 5.4 runtime for safe browser automation.
 
 ## 🛠️ Tech Stack
 
-| Component | Language / Tech | Role |
-| --- | --- | --- |
-| **Core** | Rust (Tauri v2) | System Backend, Window Manager |
-| **Frontend** | C# (Blazor WASM) | User Interface, Component Logic |
-| **Intelligence** | Python | Local AI & Automation (`lumina-sidekick`) |
-| **Networking** | Go | High-perf Networking (`lumina-net`) |
-| **Security Tool** | Zig | System Audit & Cleanup (`lumina-sentinel`) |
-| **Scripting** | Rust / Haskell | Kip Language Runtime (`src-kip`) |
+| Component | Language / Tech | Role | Details |
+| --- | --- | --- | --- |
+| **Core** | Rust (Tauri v2) | System Backend | Window Manager, IPC, File System |
+| **Frontend** | C# (Blazor WASM) | User Interface | .NET 8.0, Razor Components |
+| **Intelligence** | Python 3.10+ | AI Sidecar | `lumina-sidekick`, Math, Heuristics |
+| **Networking** | Go 1.25+ | Net Sidecar | `lumina-net`, TCP/UDP Sockets |
+| **Security** | Zig | Sentinel Tool | System Audit, Cleanup, Integrity |
+| **Scripting** | Rust / Haskell | Kip Language | `src-kip`, Parser/Interpreter |
 
 ## 🚀 Getting Started
 
