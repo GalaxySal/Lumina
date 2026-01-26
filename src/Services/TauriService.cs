@@ -2,14 +2,9 @@ using Microsoft.JSInterop;
 
 namespace tauri_browser.Services
 {
-    public class TauriService
+    public class TauriService(IJSRuntime jsRuntime)
     {
-        private readonly IJSRuntime _jsRuntime;
-
-        public TauriService(IJSRuntime jsRuntime)
-        {
-            _jsRuntime = jsRuntime;
-        }
+        private readonly IJSRuntime _jsRuntime = jsRuntime;
 
         public async Task<T> InvokeAsync<T>(string command, object? args = null)
         {
@@ -51,10 +46,9 @@ namespace tauri_browser.Services
         }
     }
 
-    public class EventCallbackHelper<T>
+    public class EventCallbackHelper<T>(Action<T> action)
     {
-        private readonly Action<T> _action;
-        public EventCallbackHelper(Action<T> action) { _action = action; }
+        private readonly Action<T> _action = action;
         
         [JSInvokable]
         public void OnEvent(T payload) => _action(payload);
