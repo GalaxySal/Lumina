@@ -14,6 +14,7 @@
             ActiveTabId="@ActiveTabId" 
             OnSwitchTab="SwitchTab" 
             OnCloseTab="CloseTab" 
+            OnPinTab="PinTab"
             OnNewTab="CreateNewTab" />
 
     <div class="content-area">
@@ -257,6 +258,7 @@
     private List<HistoryItem> HistoryList = new();
     private List<FavoriteItem> FavoritesList = new();
     private List<DownloadItem> DownloadsList = new();
+    private Stack<TabInfo> ClosedTabs = new();
     
     // Suggestions (Smart Search)
     private List<SuggestionItem> SmartSuggestions = new();
@@ -894,8 +896,11 @@
     {
         var tab = Tabs.FirstOrDefault(t => t.Id == tabId);
         if (tab == null) return;
+        
+        // Save to Closed Tabs
+        ClosedTabs.Push(tab);
 
-        string? nextTabId = ActiveTabId;
+        string? nextTabId = null;
         if (ActiveTabId == tabId)
         {
             var index = Tabs.IndexOf(tab);
@@ -926,6 +931,26 @@
             Console.WriteLine($"Error closing tab: {ex.Message}");
         }
         StateHasChanged();
+    }
+
+    private void PinTab(string tabId)
+    {
+        var tab = Tabs.FirstOrDefault(t => t.Id == tabId);
+        if (tab != null)
+        {
+            tab.IsPinned = !tab.IsPinned;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task RestoreLastClosedTab()
+    {
+        if (ClosedTabs.Count > 0)
+        {
+            var tab = ClosedTabs.Pop();
+            await CreateTabWithUrl(tab.Url);
+        }
     }
 
     private async Task OpenFile(string path)

@@ -72,6 +72,12 @@
                     const input = document.querySelector('.url-input');
                     if (input) { input.select(); input.focus(); }
                 }
+
+                // Ctrl + Shift + T: Restore Closed Tab
+                if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') {
+                    e.preventDefault();
+                    dotNetRef.invokeMethodAsync('RestoreLastClosedTab');
+                }
             });
 
             // 2. Tauri Event Listeners

@@ -211,12 +211,32 @@ class StdinListener(QThread):
             except Exception:
                 pass
 
-    def handle_omnibox_query(self, payload):
-        query = payload.get("query", "")
-        # Basic Omnibox logic (simplified for brevity, ensuring it matches existing logic)
+    def handle_omnibox_query(self, query):
+        # Basic Omnibox logic
         if not query: return
         
         suggestions = []
+
+        # 1. Math Calculation (Lumina Calculator)
+        try:
+            # Safe basic math check (digits, operators, parens)
+            clean_query = query.replace("=", "").strip()
+            if any(c in "+-*/" for c in clean_query) and all(c in "0123456789+-*/(). " for c in clean_query):
+                # Safe eval
+                result = eval(clean_query, {"__builtins__": None}, {})
+                suggestions.append({
+                    "title": f"= {result}",
+                    "description": "Calculator Result",
+                    "url": "javascript:void(0)", 
+                    "icon": "calculator",
+                    "type": "calculator"
+                })
+        except:
+            pass
+        
+        # 2. Unit Conversion (Simple) - e.g., "55 usd to try"
+        # For now, let's just let the Brain handle complex queries, or add simple regex later if needed.
+        
         if "." in query and " " not in query:
              suggestions.append({"title": f"Go to {query}", "url": query if query.startswith("http") else f"http://{query}", "icon": "globe", "type": "navigation"})
         

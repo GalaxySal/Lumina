@@ -13,6 +13,7 @@ namespace tauri_browser.Models
         public bool CanGoForward { get; set; }
         public bool IsPwaAvailable { get; set; } = false;
         public uint BlockedAdsCount { get; set; } = 0;
+        public bool IsPinned { get; set; } = false;
     }
 
     public class CreateTabArgs

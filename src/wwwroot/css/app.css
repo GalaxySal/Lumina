@@ -578,3 +578,48 @@ body {
 .save-btn:hover {
     background-color: var(--accent-hover);
 }
+
+/* Pinned Tabs */
+.tab.pinned {
+    flex: 0 0 40px;
+    min-width: 40px;
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+}
+
+.tab.pinned .tab-title {
+    display: none;
+}
+
+.tab.pinned .tab-close {
+    display: none;
+}
+
+.tab-pin-btn {
+    opacity: 0;
+    margin-left: 4px;
+    padding: 2px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    color: var(--tab-text);
+}
+
+.tab:hover .tab-pin-btn {
+    opacity: 1;
+}
+
+.tab.pinned .tab-pin-btn {
+    opacity: 1;
+    color: var(--accent-color);
+    margin: 0;
+}
+
+.tab.pinned .tab-icon {
+    margin: 0;
+}
+
