@@ -5,7 +5,7 @@ edition = "2021"
 
 [[bin]]
 name = "kip-rs"
-path = "mock_main.rs"
+path = "main.rs"
 
 [dependencies]
 nom = "7.1.3"

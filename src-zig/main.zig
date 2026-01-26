@@ -22,11 +22,11 @@ extern "kernel32" fn GlobalMemoryStatusEx(lpBuffer: *MEMORYSTATUSEX) callconv(.w
 // -----------------------------------------------
 
 pub fn main() !void {
-    var stdout_buffer: [4096]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-    const stdout = &stdout_writer.interface;
+    const stdout_file = std.io.getStdOut().writer();
+    var bw = std.io.bufferedWriter(stdout_file);
+    const stdout = bw.writer();
 
-    defer stdout.flush() catch {};
+    defer bw.flush() catch {};
     
     // Print Banner
     try stdout.print("\nLUMA SENTINEL [v0.2] - Purebred System Guardian\n", .{});

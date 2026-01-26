@@ -329,7 +329,7 @@
             FilterWindows();
         } catch (Exception ex) {
             Console.WriteLine($"Error fetching windows: {ex.Message}");
-            // Mock data for fallback/testing
+            // Fallback to empty list on error
             OpenWindows = new List<WindowInfo>();
             FilterWindows();
         }

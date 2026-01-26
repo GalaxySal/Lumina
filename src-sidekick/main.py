@@ -1,6 +1,7 @@
 import sys
 import os
 import psutil
+import json
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QFrame, QSizePolicy, QPushButton)
 from PySide6.QtCore import QTimer, Qt, QThread, Signal, QRectF

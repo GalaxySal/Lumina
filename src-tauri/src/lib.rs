@@ -69,10 +69,13 @@ pub struct ToastPayload {
 
 #[tauri::command]
 fn get_store_items(app: AppHandle) -> Vec<StoreItem> {
+    // Prioritize the writable app data store.json so user changes (installs) are reflected
+    let app_data_store = app.path().app_data_dir().unwrap_or_default().join("store.json");
+    
     let paths = vec![
+        app_data_store, // Check writable path FIRST
         PathBuf::from("store.json"),
         PathBuf::from("data/store.json"),
-        app.path().app_data_dir().unwrap_or_default().join("store.json"),
         PathBuf::from("src-tauri/store.json"),
     ];
 
@@ -88,13 +91,80 @@ fn get_store_items(app: AppHandle) -> Vec<StoreItem> {
     Vec::new()
 }
 
+fn perform_install(app: &AppHandle, id: &str) -> bool {
+    // 1. Determine Store Path (Writable)
+    let app_data_dir = app.path().app_data_dir().unwrap_or(PathBuf::from("."));
+    if !app_data_dir.exists() {
+        let _ = std::fs::create_dir_all(&app_data_dir);
+    }
+    let store_path = app_data_dir.join("store.json");
+
+    // 2. Load Existing Items
+    let mut items: Vec<StoreItem> = Vec::new();
+    
+    // Try to read from writable path first
+    if store_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&store_path) {
+             if let Ok(parsed) = serde_json::from_str(&content) {
+                 items = parsed;
+             }
+        }
+    } else {
+        // Fallback to read from read-only locations (like src-tauri/store.json) to init
+        let paths = vec![
+            PathBuf::from("store.json"),
+            PathBuf::from("src-tauri/store.json"),
+        ];
+        for p in paths {
+            if p.exists() {
+                if let Ok(content) = std::fs::read_to_string(&p) {
+                     if let Ok(parsed) = serde_json::from_str(&content) {
+                         items = parsed;
+                         break;
+                     }
+                }
+            }
+        }
+    }
+
+    // 3. Update Item
+    let mut found = false;
+    for item in &mut items {
+        if item.id == id {
+            item.installed = true;
+            found = true;
+            break;
+        }
+    }
+
+    if found {
+        // 4. Save to Writable Path
+        if let Ok(json) = serde_json::to_string_pretty(&items) {
+            if let Ok(mut file) = OpenOptions::new().write(true).create(true).truncate(true).open(&store_path) {
+                if let Ok(_) = std::io::Write::write_all(&mut file, json.as_bytes()) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 #[tauri::command]
 fn install_package(app: AppHandle, id: String) {
     println!("Lumina Command: Installing {}", id);
-    let _ = app.emit("toast", ToastPayload {
-        message: format!("Sidekick modülü güvenle kuruldu: {}", id),
-        level: "success".to_string(),
-    });
+    
+    if perform_install(&app, &id) {
+         let _ = app.emit("toast", ToastPayload {
+            message: format!("Modül başarıyla kuruldu: {}", id),
+            level: "success".to_string(),
+        });
+    } else {
+        let _ = app.emit("toast", ToastPayload {
+            message: format!("Kurulum başarısız: {}", id),
+            level: "error".to_string(),
+        });
+    }
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -1794,15 +1864,13 @@ fn get_open_windows(app: AppHandle) -> Vec<WindowInfo> {
     for (label, window) in app.webview_windows() {
         if label != "main" && !label.starts_with("flash-") {
             let title = window.title().unwrap_or_else(|_| label.clone());
-            // We assume the label contains the "pwa-" prefix or is a tab ID
-            // For PWAs, we don't have the exact current URL stored in the window object easily accessible 
-            // without querying the webview, which is async.
-            // For now, we'll return the label as a proxy or use a stored map if we had one.
-            // But for "Switch to", title is most important.
+            // For PWAs, we use the window URL which is typically the app URL.
+            // Note: This might be the initial URL if navigation handling is complex, 
+            // but for single-page apps/PWAs it's usually sufficient.
             windows.push(WindowInfo {
                 label,
                 title,
-                url: "".to_string(), // TODO: Store initial URL or query it
+                url: window.url().map(|u| u.to_string()).unwrap_or_default(),
             });
         }
     }
@@ -3268,26 +3336,25 @@ pub fn run() {
                  
                  println!("Lumina Store: Installing {}", id);
                  
-                 // Emit Toast Event to Frontend
-                 let _ = ctx.app_handle().emit("toast", ToastPayload {
-                     message: format!("Sidekick modülü güvenle kuruldu: {}", id),
-                     level: "success".to_string(),
-                 });
-
-                 // Mock Installation Logic - In a real app, this would download files or enable features
-                 // For now, we simulate a delay and success
+                 let success = perform_install(&ctx.app_handle(), id);
                  
+                 let (title, message, color) = if success {
+                     ("Installation Complete", format!("Package <strong>{}</strong> has been successfully installed.", id), "#10b981")
+                 } else {
+                     ("Installation Failed", format!("Failed to install package <strong>{}</strong>.", id), "#ef4444")
+                 };
+
                  let success_html = format!(r#"
                     <!DOCTYPE html>
                     <html>
                     <head>
-                        <title>Installation Complete</title>
+                        <title>{}</title>
                         <meta charset="UTF-8">
                         <style>
                             body {{ font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }}
                             .card {{ background: #1e293b; padding: 40px; border-radius: 16px; text-align: center; border: 1px solid #334155; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }}
                             @keyframes popIn {{ from {{ transform: scale(0.8); opacity: 0; }} to {{ transform: scale(1); opacity: 1; }} }}
-                            h1 {{ color: #10b981; margin: 0 0 16px 0; font-size: 2rem; }}
+                            h1 {{ color: {}; margin: 0 0 16px 0; font-size: 2rem; }}
                             p {{ color: #94a3b8; margin-bottom: 24px; }}
                             .btn {{ background: #3b82f6; color: white; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: 600; transition: background 0.2s; display: inline-block; }}
                             .btn:hover {{ background: #2563eb; }}
@@ -3295,15 +3362,21 @@ pub fn run() {
                     </head>
                     <body>
                         <div class="card">
-                            <div style="font-size: 4rem; margin-bottom: 10px;">🎉</div>
-                            <h1>Installation Complete</h1>
-                            <p>Package <strong>{}</strong> has been successfully installed.</p>
+                            <div style="font-size: 4rem; margin-bottom: 10px;">{}</div>
+                            <h1>{}</h1>
+                            <p>{}</p>
                             <a href="lumina-app://store" class="btn">Return to Store</a>
                         </div>
                     </body>
                     </html>
-                 "#, id);
+                 "#, title, color, if success { "🎉" } else { "⚠️" }, title, message);
                  
+                 // Emit Toast for feedback in main window too
+                 let _ = ctx.app_handle().emit("toast", ToastPayload {
+                     message: if success { format!("Sidekick modülü kuruldu: {}", id) } else { format!("Kurulum hatası: {}", id) },
+                     level: if success { "success".to_string() } else { "error".to_string() },
+                 });
+
                  return tauri::http::Response::builder()
                     .status(200)
                     .header("Content-Type", "text/html; charset=utf-8")
