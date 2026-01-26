@@ -1,5 +1,5 @@
 const std = @import("std");
-const windows = std.os.windows;
+const builtin = @import("builtin");
 
 // --- Win32 Definitions ---
 // Zig Standard Library might have some, but defining explicitly ensures control.
@@ -15,7 +15,15 @@ const MEMORYSTATUSEX = extern struct {
     ullAvailExtendedVirtual: u64,
 };
 
-extern "kernel32" fn GlobalMemoryStatusEx(lpBuffer: *MEMORYSTATUSEX) callconv(.winapi) c_int;
+// Conditional Extern for Cross-Platform Compatibility
+const Win32 = if (builtin.os.tag == .windows) struct {
+    extern "kernel32" fn GlobalMemoryStatusEx(lpBuffer: *MEMORYSTATUSEX) callconv(.stdcall) c_int;
+} else struct {
+    fn GlobalMemoryStatusEx(lpBuffer: *MEMORYSTATUSEX) callconv(.C) c_int {
+        _ = lpBuffer;
+        return 0;
+    }
+};
 // -------------------------
 
 // Lumina Sentinel [v0.2] - Purebred System Guardian
@@ -74,11 +82,15 @@ fn runCheck(writer: anytype) !void {
     var memStatus: MEMORYSTATUSEX = undefined;
     memStatus.dwLength = @sizeOf(MEMORYSTATUSEX);
     
-    if (GlobalMemoryStatusEx(&memStatus) != 0) {
+    if (Win32.GlobalMemoryStatusEx(&memStatus) != 0) {
         const total_gb = memStatus.ullTotalPhys / (1024 * 1024 * 1024);
         try writer.print("    - RAM: {d} GB Total [OK]\n", .{total_gb});
     } else {
-        try writer.print("    - RAM: Check Failed (Win32 Error)\n", .{});
+        if (builtin.os.tag == .windows) {
+            try writer.print("    - RAM: Check Failed (Win32 Error)\n", .{});
+        } else {
+            try writer.print("    - RAM: Check Skipped (Non-Windows OS)\n", .{});
+        }
     }
 
     // 2. OS Check
