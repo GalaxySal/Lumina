@@ -133,7 +133,7 @@ jobs:
           # Build Lumina Sentinel (Zig)
           echo "Building Lumina Sentinel..."
           cd src-zig
-          zig build -Doptimize=ReleaseSmall
+          zig build
           
           # Prepare Sentinel for Release Upload (Not bundled in sidecars, standalone tool)
           mkdir -p ../src-tauri/target/release/
