@@ -207,6 +207,17 @@ class StdinListener(QThread):
                 "type": "info"
             })
 
+        # 8. Brain Query (AI Fallback)
+        # If no other suggestions and query looks like a question or command
+        if not suggestions and len(query) > 5:
+            # 2026: AI is integrated into the search experience
+            suggestions.append({
+                "title": f"Ask AI: {query}",
+                "url": f"lumina-app://ai-chat?q={query}",
+                "icon": "cpu", # AI icon
+                "type": "ai_query"
+            })
+
         # Output result
         response = {"suggestions": suggestions}
         print(f"OMNIBOX_RESULTS: {json.dumps(response)}", flush=True)
