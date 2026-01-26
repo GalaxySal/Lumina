@@ -201,19 +201,19 @@
 
 @code {
     private string SearchTerm { get; set; } = "";
-    private List<FlagItem> Flags = new List<FlagItem>();
+    private List<FlagItem> FeatureList = new List<FlagItem>();
 
     private IEnumerable<FlagItem> FilteredFlags => 
         string.IsNullOrWhiteSpace(SearchTerm) 
-            ? Flags 
-            : Flags.Where(f => f.Name.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) || 
+            ? FeatureList 
+            : FeatureList.Where(f => f.Name.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) || 
                                f.Description.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase));
 
     protected override void OnInitialized()
     {
         // Define default flags
         // In a real scenario, these would be loaded from Rust/Storage
-        Flags = new List<FlagItem>
+        FeatureList = new List<FlagItem>
         {
             new FlagItem { 
                 Id = "text_scaling", 
