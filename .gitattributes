@@ -2,7 +2,6 @@
 * text=auto
 
 # Core Languages - Explicit Definition
-*.zig linguist-language=Zig
 *.go linguist-language=Go
 *.rs linguist-language=Rust
 *.hs linguist-language=Haskell

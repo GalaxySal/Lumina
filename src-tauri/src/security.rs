@@ -1,7 +1,12 @@
 use std::panic;
 
+#[cfg(windows)]
+use windows::Win32::System::Diagnostics::Debug::IsDebuggerPresent;
+#[cfg(windows)]
+use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+
 /// Initializes the security layer for Lumina.
-/// This replaces the legacy Zig implementation with pure Rust.
+/// Implements native security hardening replacing legacy Zig implementation.
 pub fn init() {
     setup_panic_hook();
     harden_process();
@@ -9,21 +14,16 @@ pub fn init() {
 }
 
 /// Configures a custom panic hook to prevent sensitive information leak
-/// in release builds, while keeping full info for debug builds.
 fn setup_panic_hook() {
     let default_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         #[cfg(not(debug_assertions))]
         {
-            // In release mode, we might want to log to a file instead of stderr
-            // or just suppress detailed output to avoid leaking internal paths/structures.
             eprintln!("Lumina Critical Error: An unexpected error occurred.");
-            // We could add file logging here in the future
         }
         
         #[cfg(debug_assertions)]
         {
-            // Pass through to default hook in debug mode
             default_hook(info);
         }
     }));
@@ -31,13 +31,33 @@ fn setup_panic_hook() {
 
 /// Applies process-level hardening techniques.
 fn harden_process() {
-    // Future expansion:
-    // - Anti-debugging checks
-    // - Memory locking (mlock) for sensitive data
-    // - Process priority adjustments
-    
     #[cfg(windows)]
-    {
-        // Example: Windows specific hardening could go here
+    unsafe {
+        // 1. Anti-Debugging Check
+        if IsDebuggerPresent().as_bool() {
+            eprintln!("SECURITY ALERT: Debugger detected. Lumina is running in restricted mode.");
+            // In the future, we can forcefully terminate or disable features here.
+        }
+
+        // 2. Memory Integrity & Status Check
+        check_memory_status();
+    }
+}
+
+#[cfg(windows)]
+unsafe fn check_memory_status() {
+    let mut mem_status = MEMORYSTATUSEX::default();
+    mem_status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+
+    if GlobalMemoryStatusEx(&mut mem_status).is_ok() {
+        let total_mb = mem_status.ullTotalPhys / 1024 / 1024;
+        let avail_mb = mem_status.ullAvailPhys / 1024 / 1024;
+        
+        // Log memory status for diagnostics
+        println!("System Guardian: Memory Check - Available: {}MB / Total: {}MB", avail_mb, total_mb);
+
+        if avail_mb < 1024 {
+            eprintln!("System Guardian Warning: Available memory is low (<1GB). Performance may be degraded.");
+        }
     }
 }

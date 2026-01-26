@@ -8,11 +8,10 @@
 [![Blazor](https://img.shields.io/badge/Blazor-WASM-512BD4?logo=blazor)](https://dotnet.microsoft.com/apps/aspnet/web-apps/blazor)
 [![Python](https://img.shields.io/badge/Python-Sidekick-yellow?logo=python)](https://www.python.org/)
 [![Go](https://img.shields.io/badge/Go-Networking-00ADD8?logo=go)](https://go.dev/)
-[![Zig](https://img.shields.io/badge/Zig-Sentinel-F7A41D?logo=zig)](https://ziglang.org/)
 [![Haskell](https://img.shields.io/badge/Haskell-Scripting-5D4F85?logo=haskell)](https://www.haskell.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-**Lumina** is a next-generation, high-performance web browser architecture exploring the limits of **Polyglot Engineering**. Built on **Tauri v2**, it orchestrates a symphony of languages—**Rust**, **C#**, **Go**, **Python**, **Zig**, and **Haskell**—to deliver speed, security, and a unique developer experience.
+**Lumina** is a next-generation, high-performance web browser architecture exploring the limits of **Polyglot Engineering**. Built on **Tauri v2**, it orchestrates a symphony of languages—**Rust**, **C#**, **Go**, **Python**, and **Haskell**—to deliver speed, security, and a unique developer experience.
 
 ## 🌟 Key Features
 
@@ -24,7 +23,6 @@ Lumina isn't just a browser; it's a multi-language runtime environment:
 - **C# / Blazor (UI):** A rich, component-based frontend running in WebAssembly with direct native interop.
 - **Python (Sidekick):** A local intelligence unit (`lumina-sidekick`) handling heavy lifting, AI tasks, and system automation.
 - **Go (Networking):** A high-concurrency sidecar (`lumina-net`) handling complex network operations and custom protocols.
-- **Zig (Sentinel):** `lumina-sentinel`, a standalone, ultra-lightweight CLI for system auditing, security verification, and cleanup.
 - **Kip (Scripting):** A dual-implementation (Rust/Haskell) experimental language for browser automation and scripting.
 
 ### 🛡️ Security First & "Safkan Yapı"
@@ -32,7 +30,6 @@ Lumina isn't just a browser; it's a multi-language runtime environment:
 Lumina follows the "Purebred Structure" (Safkan Yapı) philosophy: **No Node.js** in the core logic.
 
 - **Zero-JS-File Policy:** Strict CSP enforcement; no external JavaScript files allowed.
-- **Lumina Sentinel:** A dedicated Zig tool to audit environment integrity, verify binaries, and purge Chromium/Google tracking data from the system.
 - **Granular ACL:** Permission scopes defined down to specific IPC commands.
 - **Sandboxed Contexts:** Strong isolation for browsing tabs and PWA instances.
 
@@ -66,7 +63,6 @@ Lumina follows the "Purebred Structure" (Safkan Yapı) philosophy: **No Node.js*
 | **Frontend** | C# (Blazor WASM) | User Interface | .NET 8.0, Razor Components |
 | **Intelligence** | Python 3.10+ | AI Sidecar | `lumina-sidekick`, Math, Heuristics |
 | **Networking** | Go 1.25+ | Net Sidecar | `lumina-net`, TCP/UDP Sockets |
-| **Security** | Zig | Sentinel Tool | System Audit, Cleanup, Integrity |
 | **Scripting** | Rust / Haskell | Kip Language | `src-kip`, Parser/Interpreter |
 
 ## 🚀 Getting Started
@@ -79,7 +75,6 @@ Ensure you have the following installed:
 - **.NET SDK:** .NET 8.0 or later
 - **Python:** 3.10+ (for Sidekick)
 - **Go:** 1.21+ (for networking sidecar)
-- **Zig:** Master/Latest (for Sentinel)
 - **Tauri CLI:** `cargo install tauri-cli`
 
 ### Installation & Development
@@ -92,7 +87,7 @@ Ensure you have the following installed:
    ```
 
 2. **Run the development server:**
-   This command compiles the sidecars (Go/Python/Rust/Zig) and starts the app.
+   This command compiles the sidecars (Go/Python/Rust) and starts the app.
 
    ```bash
    cargo tauri dev
@@ -100,13 +95,13 @@ Ensure you have the following installed:
 
 ### Building for Production
 
-To build the optimized release bundle (including Sentinel):
+To build the optimized release bundle:
 
 ```bash
 cargo tauri build
 ```
 
-*Note: The build pipeline automatically handles cross-language compilation and integrates `lumina-sentinel` into the release assets.*
+*Note: The build pipeline automatically handles cross-language compilation.*
 
 ## 📂 Project Structure
 
@@ -116,7 +111,6 @@ Lumina/
 ├── src-tauri/      # Tauri Core (Rust) & Sidecar Binaries
 ├── src-sidekick/   # Intelligence Sidecar (Python)
 ├── src-go/         # Networking Sidecar (Go)
-├── src-zig/        # Lumina Sentinel (Zig Standalone Tool)
 ├── src-kip/        # Kip Language Implementation (Rust/Haskell)
 └── .github/        # CI/CD Workflows (Polyglot Pipeline)
 ```

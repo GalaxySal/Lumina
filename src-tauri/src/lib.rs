@@ -3575,13 +3575,6 @@ pub fn run() {
                 }
             });
 
-            // Initialize Zig Security Layer
-            // #[cfg(zig_enabled)]
-            // unsafe {
-            //    lumina_init_security();
-            //    println!("Lumina Security Layer (Zig) initialized.");
-            // }
-
             // Initialize Rust Native Security Layer
             security::init();
 
