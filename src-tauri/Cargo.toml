@@ -43,5 +43,6 @@ base64 = "0.22.1"
 tauri-plugin-deep-link = "2.4.6"
 tauri-plugin-shell = "2.3.4"
 mlua = { version = "0.9", features = ["lua54", "vendored", "async", "send"] }
-windows = { version = "0.61.3", features = ["Win32_System_Diagnostics_Debug", "Win32_System_SystemInformation", "Win32_Foundation"] }
+windows = { version = "0.52.0", features = ["Win32_System_Diagnostics_Debug", "Win32_System_SystemInformation", "Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+windows-future = "0.3.2"
 

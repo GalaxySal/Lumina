@@ -414,24 +414,37 @@ async fn request_omnibox_suggestions(
 }
 
 #[tauri::command]
-fn navigate(app: AppHandle, label: String, url: String) {
+async fn navigate(app: AppHandle, label: String, url: String) {
     // println!("Rust: navigating tab {} to {}", label, url);
     // Try to find the webview. If not found, it might be because it was JUST created and not yet in the map.
     // In Tauri v2, add_child returns the webview instance.
     // But navigate is a separate command called from JS, so it relies on AppHandle lookup.
     
-    if let Some(webview) = app.get_webview(&label) {
+    let mut webview = app.get_webview(&label);
+    if webview.is_none() {
+        // Retry logic for race conditions - Increased to 10x 100ms (1s total)
+        for i in 0..10 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            webview = app.get_webview(&label);
+            if webview.is_some() { 
+                println!("Rust: webview {} found after retry {}", label, i+1);
+                break; 
+            }
+        }
+    }
+
+    if let Some(webview) = webview {
         let _ = webview.set_focus();
         
         // Rewrite lumina:// to lumina-app://localhost/ (standardized) for internal navigation
         let target_url = if url.starts_with("lumina://") {
             url.replace("lumina://", "lumina-app://localhost/")
         } else if url.starts_with("lumina-app://") {
-             if !url.contains("lumina-app://localhost/") {
-                 url.replace("lumina-app://", "lumina-app://localhost/")
-             } else {
-                 url.clone()
-             }
+            if !url.contains("lumina-app://localhost/") {
+                url.replace("lumina-app://", "lumina-app://localhost/")
+            } else {
+                url.clone()
+            }
         } else {
             url.clone()
         };
@@ -448,7 +461,7 @@ fn navigate(app: AppHandle, label: String, url: String) {
             check_and_redirect(wv, u).await;
         });
     } else {
-        println!("Rust: webview {} not found via AppHandle lookup", label);
+        println!("Rust: webview {} not found via AppHandle lookup (gave up after retries)", label);
     }
 }
 
@@ -1950,15 +1963,15 @@ async fn open_flash_window(app: AppHandle, url: String) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0");
+        builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0");
     }
     #[cfg(target_os = "linux")]
     {
-        builder = builder.user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+        builder = builder.user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     }
     #[cfg(target_os = "macos")]
     {
-        builder = builder.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+        builder = builder.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     }
 
     builder.inner_size(800.0, 600.0)
@@ -2744,15 +2757,15 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
             builder = builder.additional_browser_args(&arg);
          }
 
-         builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0");
+         builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0");
     }
     #[cfg(target_os = "linux")]
     {
-        builder = builder.user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+        builder = builder.user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     }
     #[cfg(target_os = "macos")]
     {
-        builder = builder.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36");
+        builder = builder.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     }
 
     builder = builder.initialization_script(&full_script)
@@ -2841,6 +2854,34 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
 
                     let _ = webview.show();
                     let _ = webview.set_focus();
+
+                    #[cfg(target_os = "windows")]
+                    {
+                        use windows::Win32::Foundation::HWND;
+                        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOP, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW};
+                        
+                        // Force Z-Order to Top
+                        if let Ok(hwnd_isize) = webview.window().hwnd() {
+                             // Tauri v2 returns HWND as isize on Windows
+                             let hwnd = HWND(hwnd_isize.0 as isize);
+                             unsafe {
+                                 let _ = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                             }
+                        }
+                    }
+                    
+                    // Explicitly ensure navigation (fix for WebView2 Source being null)
+                    // This forces the webview to navigate even if the builder initialization missed it
+                    // Using eval since load_url is not available on Webview struct in this context
+                    let json_url = serde_json::to_string(&url).unwrap_or_else(|_| format!("'{}'", url));
+                    let nav_script = format!("window.location.replace({})", json_url);
+                    if let Err(e) = webview.eval(&nav_script) {
+                        println!("Rust: Failed to force load url via eval: {}", e);
+                    }
+
+                    // Force resize to ensure visibility (Fix for black screen / 0x0 size)
+                    let _ = webview.set_size(tauri::LogicalSize::new(tab_width, tab_height));
+
                     let _ = app.emit::<TabCreatedPayload>("tab-created", TabCreatedPayload {
                         label: label.clone(),
                         url: url.clone(),
@@ -2896,6 +2937,20 @@ fn switch_tab(app: AppHandle, state: tauri::State<'_, UiState>, label: String) {
     if let Some(webview) = app.get_webview(&label) {
         let _ = webview.show();
         let _ = webview.set_focus();
+
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOP, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW};
+            
+            // Force Z-Order to Top
+             if let Ok(hwnd_isize) = webview.window().hwnd() {
+                     let hwnd = HWND(hwnd_isize.0 as isize);
+                     unsafe {
+                         let _ = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                     }
+             }
+        }
     }
     
     // Update state
@@ -3447,51 +3502,93 @@ pub fn run() {
                 use tauri_plugin_shell::ShellExt;
                 use tauri_plugin_shell::process::CommandEvent;
                 
-                println!("Starting Lumina Sidekick...");
-                if let Ok(cmd) = sidekick_handle.shell().sidecar("lumina-sidekick") {
-                    match cmd.spawn() {
-                        Ok((mut rx, mut child)) => {
-                            // Spawn Input Handler (Rust -> Sidekick)
-                            tauri::async_runtime::spawn(async move {
-                                while let Some(msg) = sidekick_rx.recv().await {
-                                    let input = format!("{}\n", msg);
-                                    if let Err(e) = child.write(input.as_bytes()) {
-                                        eprintln!("Failed to write to Sidekick: {}", e);
-                                        break;
-                                    }
-                                }
-                            });
+                loop {
+                    println!("Starting Lumina Sidekick...");
+                    let sidecar = match sidekick_handle.shell().sidecar("lumina-sidekick") {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("Failed to create Sidekick sidecar command: {}", e);
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            continue;
+                        }
+                    };
 
-                            // Spawn Output Handler (Sidekick -> Rust)
-                            while let Some(event) = rx.recv().await {
-                                if let CommandEvent::Stdout(line_bytes) = event {
-                                    let line = String::from_utf8_lossy(&line_bytes);
-                                    if line.starts_with("LUA:") {
-                                        let script = line.trim_start_matches("LUA:").trim().to_string();
-                                        println!("Bridge: Executing Lua from Sidekick: {}", script);
-                                        
-                                        if let Some(state) = sidekick_handle.try_state::<LuaState>() {
-                                            if let Ok(lua) = state.lua.lock() {
-                                                match lua.load(&script).eval::<String>() {
-                                                    Ok(res) => {
-                                                        let _ = sidekick_handle.emit("lua-bridge-message", res);
-                                                    }
-                                                    Err(e) => {
-                                                        eprintln!("Lua Bridge Error: {}", e);
-                                                    }
-                                                }
-                                            }
+                    let (mut rx, mut child) = match sidecar.spawn() {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("Failed to spawn Sidekick process: {}", e);
+                            if e.to_string().contains("740") {
+                                eprintln!("CRITICAL: Sidekick requires elevation (Admin rights). Stopping retry loop.");
+                                break;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            continue;
+                        }
+                    };
+
+                    println!("Lumina Sidekick started successfully.");
+
+                    loop {
+                        tokio::select! {
+                            msg_opt = sidekick_rx.recv() => {
+                                match msg_opt {
+                                    Some(msg) => {
+                                        let input = format!("{}\n", msg);
+                                        if let Err(e) = child.write(input.as_bytes()) {
+                                            eprintln!("Failed to write to Sidekick: {}", e);
+                                            break; 
                                         }
-                                    } else if line.starts_with("OMNIBOX_RESULTS:") {
-                                        let json_str = line.trim_start_matches("OMNIBOX_RESULTS:").trim();
-                                        // println!("Bridge: OmniBox Results: {}", json_str);
-                                        let _ = sidekick_handle.emit("omnibox-results", json_str);
+                                    }
+                                    None => {
+                                        println!("Sidekick input channel closed. Stopping Sidekick.");
+                                        return; 
                                     }
                                 }
                             }
+                            event_opt = rx.recv() => {
+                                match event_opt {
+                                    Some(event) => {
+                                        match event {
+                                            CommandEvent::Stdout(line_bytes) => {
+                                                let line = String::from_utf8_lossy(&line_bytes);
+                                                if line.starts_with("LUA:") {
+                                                    let script = line.trim_start_matches("LUA:").trim().to_string();
+                                                    println!("Bridge: Executing Lua from Sidekick: {}", script);
+                                                    
+                                                    if let Some(state) = sidekick_handle.try_state::<LuaState>() {
+                                                        if let Ok(lua) = state.lua.lock() {
+                                                            match lua.load(&script).eval::<String>() {
+                                                                Ok(res) => {
+                                                                    let _ = sidekick_handle.emit("lua-bridge-message", res);
+                                                                }
+                                                                Err(e) => {
+                                                                    eprintln!("Lua Bridge Error: {}", e);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } else if line.starts_with("OMNIBOX_RESULTS:") {
+                                                    let json_str = line.trim_start_matches("OMNIBOX_RESULTS:").trim();
+                                                    let _ = sidekick_handle.emit("omnibox-results", json_str);
+                                                }
+                                            }
+                                            CommandEvent::Stderr(line_bytes) => {
+                                                let line = String::from_utf8_lossy(&line_bytes);
+                                                eprintln!("Sidekick Stderr: {}", line);
+                                            }
+                                            CommandEvent::Terminated(t) => {
+                                                println!("Sidekick terminated: {:?}", t);
+                                                break; 
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    None => break, 
+                                }
+                            }
                         }
-                        Err(e) => eprintln!("Failed to spawn Sidekick: {}", e),
                     }
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
             });
 
