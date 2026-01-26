@@ -16,7 +16,11 @@
         "title": "Lumina Browser",
         "width": 800,
         "height": 600,
-        "transparent": false,
+        "transparent": true,
+        "windowEffects": {
+            "effects": ["acrylic", "mica", "blur"],
+            "state": "active"
+        },
         "additionalBrowserArgs": "--ignore-certificate-errors --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-speech-api --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-breakpad --disable-client-side-phishing-detection --disable-component-update --disable-default-apps --disable-dev-shm-usage --disable-domain-reliability --disable-extensions --disable-features=AudioServiceOutOfProcess --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-print-preview --disable-prompt-on-repost --disable-renderer-backgrounding --disable-sync --disable-translate --metrics-recording-only --no-first-run --safebrowsing-disable-auto-update --enable-automation --password-store=basic --use-mock-keychain"
       }
     ],

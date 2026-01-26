@@ -141,7 +141,7 @@ fn perform_install(app: &AppHandle, id: &str) -> bool {
         // 4. Save to Writable Path
         if let Ok(json) = serde_json::to_string_pretty(&items) {
             if let Ok(mut file) = OpenOptions::new().write(true).create(true).truncate(true).open(&store_path) {
-                if let Ok(_) = std::io::Write::write_all(&mut file, json.as_bytes()) {
+                if std::io::Write::write_all(&mut file, json.as_bytes()).is_ok() {
                     return true;
                 }
             }
@@ -3336,7 +3336,7 @@ pub fn run() {
                  
                  println!("Lumina Store: Installing {}", id);
                  
-                 let success = perform_install(&ctx.app_handle(), id);
+                 let success = perform_install(ctx.app_handle(), id);
                  
                  let (title, message, color) = if success {
                      ("Installation Complete", format!("Package <strong>{}</strong> has been successfully installed.", id), "#10b981")
