@@ -110,7 +110,7 @@ jobs:
           
           # Nuitka Build
           if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-             python -m nuitka --assume-yes-for-downloads --onefile --standalone --enable-plugin=pyside6 --windows-console-mode=disable --windows-icon-from-ico=../src-tauri/icons/icon.ico --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.exe main.py
+             python -m nuitka --assume-yes-for-downloads --nowelcome --onefile --standalone --enable-plugin=pyside6 --windows-console-mode=disable --windows-icon-from-ico=../src-tauri/icons/icon.ico --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.exe main.py
              
              if [ ! -f "LuminaSidekick.exe" ]; then
                  echo "Error: LuminaSidekick.exe was not created!"
@@ -121,7 +121,7 @@ jobs:
              cp LuminaSidekick.exe ../src-tauri/binaries/lumina-sidekick-${{ env.SIDECAR_TRIPLE }}${{ env.EXE_EXT }}
           else
              # Linux/macOS
-             python -m nuitka --assume-yes-for-downloads --onefile --standalone --enable-plugin=pyside6 --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.bin main.py
+             python -m nuitka --assume-yes-for-downloads --nowelcome --onefile --standalone --enable-plugin=pyside6 --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=LuminaSidekick.bin main.py
              
              # Debug output
              echo "Nuitka build finished. Listing directory:"
