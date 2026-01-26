@@ -3,83 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Page Not Found</title>
+    <title>Connection Error - Lumina</title>
+    <!-- Safkan: Native Error Page. No external dependencies. -->
     <style>
         :root {
-            --bg-color: #1e1e1e;
+            --bg-color: #0f0f0f;
             --text-color: #e0e0e0;
-            --accent-color: #3b82f6;
-            --secondary-text: #9ca3af;
-            --card-bg: #2d2d2d;
+            --accent-color: #ff3e3e; /* Error Red */
+            --brand-color: #05B8CC;  /* Lumina Cyan */
+            --secondary-text: #6b7280;
+            --card-bg: #1a1a1a;
+            --border-color: #333;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: 'Segoe UI', system-ui, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
             height: 100vh;
             margin: 0;
-            text-align: center;
+            overflow: hidden;
+            user-select: none;
         }
 
-        .container {
-            max-width: 600px;
-            padding: 2rem;
+        .error-container {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 3rem;
+            text-align: center;
+            max-width: 480px;
+            width: 100%;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .icon-wrapper {
+            background: rgba(255, 62, 62, 0.1);
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
         }
 
         .icon {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            color: var(--secondary-text);
+            color: var(--accent-color);
+            width: 40px;
+            height: 40px;
         }
 
         h1 {
             font-size: 1.5rem;
-            margin-bottom: 0.5rem;
+            font-weight: 600;
+            margin: 0 0 0.5rem;
+            letter-spacing: -0.5px;
         }
 
         p {
             color: var(--secondary-text);
-            margin-bottom: 2rem;
+            margin: 0 0 2rem;
             line-height: 1.5;
+            font-size: 0.95rem;
         }
 
-        .url-display {
-            background-color: var(--card-bg);
+        .url-badge {
+            background: #000;
             padding: 0.5rem 1rem;
-            border-radius: 4px;
-            font-family: monospace;
+            border-radius: 6px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+            color: var(--secondary-text);
             margin-bottom: 2rem;
-            word-break: break-all;
-            display: none; /* Hidden by default */
+            display: inline-block;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            border: 1px solid var(--border-color);
         }
 
-        .error-details {
-            font-size: 0.875rem;
-            color: #ef4444;
-            margin-bottom: 2rem;
-            display: none; /* Hidden by default */
-        }
-
-        .buttons {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
+        .actions {
+            display: grid;
+            gap: 0.75rem;
         }
 
         button {
-            background-color: var(--accent-color);
-            color: white;
+            background: var(--brand-color);
+            color: #000;
             border: none;
             padding: 0.75rem 1.5rem;
             border-radius: 6px;
             font-size: 1rem;
+            font-weight: 500;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: opacity 0.2s;
+            font-family: inherit;
         }
 
         button:hover {
@@ -87,77 +116,69 @@
         }
 
         button.secondary {
-            background-color: transparent;
-            border: 1px solid var(--secondary-text);
+            background: transparent;
             color: var(--text-color);
+            border: 1px solid var(--border-color);
         }
 
         button.secondary:hover {
-            background-color: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="icon">:(</div>
-        <h1>This site can't be reached</h1>
-        <div id="urlDisplay" class="url-display"></div>
-        <p id="message">Check your internet connection or the URL.</p>
-        <div id="errorDetails" class="error-details"></div>
+    <div class="error-container">
+        <div class="icon-wrapper">
+            <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+        </div>
+        
+        <h1>Connection Lost</h1>
+        <div id="urlDisplay" class="url-badge" style="display: none;"></div>
+        <p id="errorMessage">The server could not be reached.</p>
 
-        <div class="buttons">
+        <div class="actions">
             <button onclick="tryAgain()">Try Again</button>
-            <button class="secondary" onclick="goHome()">Go Home</button>
+            <button class="secondary" onclick="goHome()">Return to Dashboard</button>
         </div>
     </div>
 
     <script>
-        // Parse URL parameters
-        const urlParams = new URLSearchParams(window.location.search);
-        const targetUrl = urlParams.get('url');
-        const errorMsg = urlParams.get('err');
+        // Safkan Logic: Pure JS, No Dependencies
+        const params = new URLSearchParams(window.location.search);
+        const url = params.get('url');
+        const err = params.get('err');
 
-        if (targetUrl) {
-            document.getElementById('urlDisplay').textContent = targetUrl;
-            document.getElementById('urlDisplay').style.display = 'block';
+        if (url) {
+            const el = document.getElementById('urlDisplay');
+            el.textContent = url;
+            el.style.display = 'inline-block';
         }
 
-        if (errorMsg) {
-            document.getElementById('errorDetails').textContent = errorMsg;
-            document.getElementById('errorDetails').style.display = 'block';
-            
-            if (errorMsg.includes("DNS")) {
-                document.getElementById('message').textContent = "We couldn't find the IP address for this server.";
-            } else if (errorMsg.includes("refused")) {
-                document.getElementById('message').textContent = "The server refused the connection.";
-            } else if (errorMsg.includes("timed out")) {
-                document.getElementById('message').textContent = "The connection timed out.";
-            }
+        if (err) {
+            const msgEl = document.getElementById('errorMessage');
+            if (err.includes("NAME_NOT_RESOLVED")) msgEl.textContent = "We couldn't find the IP address for this server.";
+            else if (err.includes("CONNECTION_REFUSED")) msgEl.textContent = "The server refused the connection.";
+            else if (err.includes("TIMED_OUT")) msgEl.textContent = "The connection timed out.";
+            else msgEl.textContent = err;
         }
 
         function tryAgain() {
-            if (targetUrl) {
+            if (url) {
                 try {
-                    const url = new URL(targetUrl);
-                    if (url.protocol === 'http:' || url.protocol === 'https:') {
-                        window.location.href = url.href;
+                    const u = new URL(url);
+                    if (u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'lumina:') {
+                        window.location.href = u.href;
                         return;
                     }
-                } catch (e) {
-                    console.error("Invalid URL:", targetUrl);
-                }
+                } catch(e) {}
             }
             window.history.back();
         }
 
         function goHome() {
-            // This assumes the main app handles 'https://google.com' or similar as home
-            // Or we can just go back to a safe page
-             if (window.__TAURI__) {
-                // If we are in a tab, we might want to load the home page
-                // But the tab is a webview.
-                window.location.href = "https://www.google.com";
-            }
+            window.location.href = "lumina://home";
         }
     </script>
 </body>

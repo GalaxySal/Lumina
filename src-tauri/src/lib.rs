@@ -24,7 +24,26 @@ struct LuaState {
     lua: Mutex<Lua>,
 }
 
+// 1. Safe Lua Execution (Real Lua 5.4 Runtime)
+// This creates a sandboxed Lua environment that can interact with the browser safely.
+fn create_lua_runtime() -> Lua {
+    // Create a Lua state with safe standard libraries only (Sandbox)
+    // We exclude IO, OS, and Package libraries to prevent system access
+    // Note: Lua 5.4 has built-in bitwise operators, so BIT library is not needed/available.
+    let libs = mlua::StdLib::MATH | mlua::StdLib::STRING | mlua::StdLib::TABLE;
+    let lua = Lua::new_with(libs, mlua::LuaOptions::default()).expect("Failed to create Lua state");
+    
+    // Inject Custom Lumina API
+    let _ = lua.load("
+        -- Custom Lumina API
+        lumina = {
+            version = '0.3.5',
+            platform = 'windows'
+        }
+    ").exec();
 
+    lua
+}
 
 #[derive(Clone, serde::Serialize)]
 struct AdblockStatsPayload {
@@ -234,9 +253,42 @@ async fn check_and_redirect(webview: tauri::Webview, url: String) {
     }
 }
 
+struct SidekickState {
+    tx: tokio::sync::mpsc::Sender<String>,
+}
+
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+async fn request_omnibox_suggestions(
+    state: tauri::State<'_, SidekickState>, 
+    app_data: tauri::State<'_, AppDataStore>,
+    history_manager: tauri::State<'_, HistoryManager>,
+    query: String
+) -> Result<(), String> {
+    // 1. Fetch Favorites
+    let favorites = {
+        let data = app_data.data.lock().unwrap();
+        data.favorites.clone()
+    };
+
+    // 2. Fetch History (Search or Recent)
+    let history_items = if query.is_empty() {
+        history_manager.get_recent(10).unwrap_or_default()
+    } else {
+        history_manager.search(&query).unwrap_or_default()
+    };
+
+    // 3. Construct Payload
+    let payload = serde_json::json!({
+        "type": "omnibox_query",
+        "query": query,
+        "context": {
+            "favorites": favorites,
+            "history": history_items
+        }
+    }).to_string();
+    
+    state.tx.send(payload).await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -2416,7 +2468,31 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
     
     #[cfg(target_os = "windows")]
     {
-         builder = builder.additional_browser_args("--ignore-certificate-errors");
+         // Chrome Extensions Support (Windows)
+         let mut args = Vec::new();
+         args.push("--ignore-certificate-errors".to_string());
+         
+         // Load unpacked extensions if available
+         if let Some(ext_path) = get_extension_path(&app_handle_dl) {
+             if let Ok(entries) = std::fs::read_dir(&ext_path) {
+                 let paths: Vec<String> = entries
+                     .filter_map(|e| e.ok())
+                     .filter(|e| e.path().is_dir())
+                     .map(|e| e.path().to_string_lossy().into_owned())
+                     .collect();
+                 
+                 if !paths.is_empty() {
+                     let ext_arg = format!("--load-extension={}", paths.join(","));
+                     println!("Lumina Extensions: Loading {}", ext_arg);
+                     args.push(ext_arg);
+                 }
+             }
+         }
+         
+         for arg in args {
+            builder = builder.additional_browser_args(&arg);
+         }
+
          builder = builder.user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0");
     }
     #[cfg(target_os = "linux")]
@@ -2923,12 +2999,37 @@ fn run_lua_code(app: AppHandle, code: String) -> Result<String, String> {
     result
 }
 
+// 2. Chrome Extension Support (Windows Only)
+// Allows loading unpacked extensions from a specific directory
+#[cfg(target_os = "windows")]
+fn get_extension_path(app: &AppHandle) -> Option<PathBuf> {
+    if let Ok(app_data) = app.path().app_data_dir() {
+        let extensions_dir = app_data.join("extensions");
+        if !extensions_dir.exists() {
+            let _ = std::fs::create_dir_all(&extensions_dir);
+        }
+        Some(extensions_dir)
+    } else {
+        None
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
     std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    #[cfg(target_os = "windows")]
+    {
+        // Enable WebView2 features for extensions
+        // Note: This requires the correct WebView2 runtime and potentially additional configuration
+        // Tauri v2 exposes some of this via WebviewWindowBuilder, but global settings are limited.
+        // We will try to set the user data folder which is often required for extensions.
+    }
+
+    builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -2999,8 +3100,12 @@ pub fn run() {
         })
         .manage(PwaState { icons: std::sync::Mutex::new(std::collections::HashMap::new()) })
         .setup(|app| {
-            // Initialize Lua
-            app.manage(LuaState { lua: Mutex::new(Lua::new()) });
+            // Initialize Lua (Real Runtime)
+            app.manage(LuaState { lua: Mutex::new(create_lua_runtime()) });
+
+            // Initialize Sidekick Communication Channel
+            let (sidekick_tx, mut sidekick_rx) = tokio::sync::mpsc::channel::<String>(32);
+            app.manage(SidekickState { tx: sidekick_tx });
 
             // Start Lumina Sidekick (GUI) with output capture for "The Bridge"
             let sidekick_handle = app.handle().clone();
@@ -3011,7 +3116,19 @@ pub fn run() {
                 println!("Starting Lumina Sidekick...");
                 if let Ok(cmd) = sidekick_handle.shell().sidecar("lumina-sidekick") {
                     match cmd.spawn() {
-                        Ok((mut rx, _child)) => {
+                        Ok((mut rx, mut child)) => {
+                            // Spawn Input Handler (Rust -> Sidekick)
+                            tauri::async_runtime::spawn(async move {
+                                while let Some(msg) = sidekick_rx.recv().await {
+                                    let input = format!("{}\n", msg);
+                                    if let Err(e) = child.write(input.as_bytes()) {
+                                        eprintln!("Failed to write to Sidekick: {}", e);
+                                        break;
+                                    }
+                                }
+                            });
+
+                            // Spawn Output Handler (Sidekick -> Rust)
                             while let Some(event) = rx.recv().await {
                                 if let CommandEvent::Stdout(line_bytes) = event {
                                     let line = String::from_utf8_lossy(&line_bytes);
@@ -3021,10 +3138,8 @@ pub fn run() {
                                         
                                         if let Some(state) = sidekick_handle.try_state::<LuaState>() {
                                             if let Ok(lua) = state.lua.lock() {
-                                                // Run Lua and get result string
                                                 match lua.load(&script).eval::<String>() {
                                                     Ok(res) => {
-                                                        // Send to all windows
                                                         let _ = sidekick_handle.emit("lua-bridge-message", res);
                                                     }
                                                     Err(e) => {
@@ -3033,6 +3148,10 @@ pub fn run() {
                                                 }
                                             }
                                         }
+                                    } else if line.starts_with("OMNIBOX_RESULTS:") {
+                                        let json_str = line.trim_start_matches("OMNIBOX_RESULTS:").trim();
+                                        // println!("Bridge: OmniBox Results: {}", json_str);
+                                        let _ = sidekick_handle.emit("omnibox-results", json_str);
                                     }
                                 }
                             }
@@ -3321,7 +3440,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            greet, 
             navigate, 
             force_internal_navigate,
             go_back, 
@@ -3360,6 +3478,7 @@ pub fn run() {
             run_kip_code,
             run_networking_command,
             run_sidekick,
+            request_omnibox_suggestions,
             run_lua_code
         ])
         .run(tauri::generate_context!())

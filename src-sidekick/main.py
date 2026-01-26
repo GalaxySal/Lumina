@@ -88,6 +88,128 @@ class ConverterThread(QThread):
         finally:
             self.finished.emit()
 
+# --- 👂 Stdin Listener (Rust Communication) ---
+class StdinListener(QThread):
+    def run(self):
+        while True:
+            try:
+                line = sys.stdin.readline()
+                if not line:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                
+                try:
+                    data = json.loads(line)
+                    if data.get("type") == "omnibox_query":
+                        self.handle_omnibox_query(data.get("query", ""))
+                except json.JSONDecodeError:
+                    pass
+            except Exception:
+                pass
+
+    def handle_omnibox_query(self, payload):
+        query = payload.get("query", "")
+        context = payload.get("context", {})
+        favorites = context.get("favorites", [])
+        history = context.get("history", [])
+
+        if not query:
+            return
+
+        suggestions = []
+        query_lower = query.lower()
+        
+        # 1. Navigation (Smart detection)
+        if "." in query and " " not in query:
+             suggestions.append({
+                "title": f"Go to {query}",
+                "url": f"http://{query}" if not query.startswith("http") else query,
+                "icon": "globe",
+                "type": "navigation"
+            })
+        
+        # 2. Real Favorites (from Context)
+        for fav in favorites:
+            if query_lower in fav.get("title", "").lower() or query_lower in fav.get("url", "").lower():
+                 suggestions.append({
+                    "title": fav.get("title", "Favorite"),
+                    "url": fav.get("url", ""),
+                    "icon": "star",
+                    "type": "favorite"
+                })
+
+        # 3. Real History (from Context)
+        # Limit history suggestions to 3 items to avoid clutter if many match
+        hist_count = 0
+        for item in history:
+            if hist_count >= 3: break
+            # Avoid duplicates with favorites or exact query
+            if any(f.get("url") == item.get("url") for f in favorites):
+                continue
+            
+            suggestions.append({
+                "title": item.get("title", "History"),
+                "url": item.get("url", ""),
+                "icon": "clock",
+                "type": "history"
+            })
+            hist_count += 1
+
+        # 4. Search Engine
+        suggestions.append({
+            "title": f"Google Search: {query}",
+            "url": f"https://www.google.com/search?q={query}",
+            "icon": "search",
+            "type": "search"
+        })
+        
+        # 5. Internal Pages (Lumina)
+        if "set" in query_lower:
+            suggestions.append({
+                "title": "Lumina Settings",
+                "url": "lumina-app://settings",
+                "icon": "settings",
+                "type": "internal"
+            })
+
+        # 6. Math Calculation
+        if any(op in query for op in ['+', '-', '*', '/']):
+            try:
+                # Basic safety: only allow numbers and operators
+                if all(c in "0123456789+-*/. ()" for c in query):
+                    result = eval(query)
+                    suggestions.append({
+                        "title": f"Calculation: {query} = {result}",
+                        "url": f"https://www.google.com/search?q={query}",
+                        "icon": "calculator",
+                        "type": "calculation"
+                    })
+            except:
+                pass
+
+        # 7. Time/Date (Safkan Smart Info)
+        if query_lower in ["time", "date", "saat", "tarih"]:
+            from datetime import datetime
+            now = datetime.now()
+            suggestions.append({
+                "title": f"Current Time: {now.strftime('%H:%M:%S')}",
+                "url": "",
+                "icon": "clock",
+                "type": "info"
+            })
+            suggestions.append({
+                "title": f"Current Date: {now.strftime('%Y-%m-%d')}",
+                "url": "",
+                "icon": "calendar",
+                "type": "info"
+            })
+
+        # Output result
+        response = {"suggestions": suggestions}
+        print(f"OMNIBOX_RESULTS: {json.dumps(response)}", flush=True)
+
 # --- 🚀 Ana Uygulama ---
 class LuminaSidekick(QMainWindow):
     def __init__(self):
@@ -175,6 +297,10 @@ class LuminaSidekick(QMainWindow):
         self.timer.start(1000)
 
         self.setAcceptDrops(True)
+
+        # Start Stdin Listener
+        self.stdin_listener = StdinListener()
+        self.stdin_listener.start()
 
     def fire_lua_bridge(self):
         # Sends a Lua script to Rust via stdout

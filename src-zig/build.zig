@@ -7,13 +7,12 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "lumina-sentinel",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .strip = true, // Remove symbols to reduce size
-        }),
+        .root_source_file = b.path("main.zig"),
+        .target = target,
+        .optimize = optimize,
     });
+    // For older Zig versions or specific environments where root_module is tricky in init
+    exe.root_module.strip = true; 
 
     b.installArtifact(exe);
 }

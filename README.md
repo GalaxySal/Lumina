@@ -32,6 +32,9 @@ Lumina follows the "Purebred Structure" (Safkan Yapı) philosophy: **No Node.js*
 - **Command Palette (Alt+Space):** Instant access to tabs, commands, and history.
 - **Flash Tab:** Floating overlay for quick lookups without context switching.
 - **Vertical Tabs (Zen Mode):** Optimized screen real estate for wide displays.
+- **OmniBox Smart Search:** Intelligent address bar powered by Python Sidekick, offering real-time math, time, history, and favorite suggestions.
+- **Chrome Extensions (Windows):** Support for loading unpacked Chrome extensions for enhanced browsing.
+- **Lua Scripting:** Built-in sandboxed Lua 5.4 runtime for safe browser automation and extension.
 
 ## 🛠️ Tech Stack
 

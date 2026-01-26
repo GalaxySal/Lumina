@@ -1,97 +1,109 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Lumina Browser</title>
     <base href="/" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <link rel="stylesheet" href="css/app.css" />
-  </head>
+    
+    <!-- Safkan: No external fonts/CDNs. Native look & feel. -->
+    <style>
+        /* Modern Dark Loader */
+        body { margin: 0; background-color: #0f0f0f; overflow: hidden; }
+        #app { height: 100vh; width: 100vw; }
+        
+        .lumina-splash {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            background: #0f0f0f;
+            color: #fff;
+            font-family: 'Segoe UI', sans-serif;
+            user-select: none;
+            cursor: default;
+        }
+        
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 3px solid #333;
+            border-bottom-color: #05B8CC; /* Lumina Cyan */
+            border-radius: 50%;
+            animation: rotation 1s linear infinite;
+            margin-bottom: 24px;
+        }
+        
+        .brand {
+            font-weight: 600;
+            letter-spacing: 2px;
+            font-size: 0.9rem;
+            color: #888;
+            text-transform: uppercase;
+        }
 
-  <body>
-    <div id="app"></div>
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div class="lumina-splash">
+            <div class="loader"></div>
+            <div class="brand">Lumina OS</div>
+        </div>
+    </div>
+
     <script src="_framework/blazor.webassembly.js"></script>
     <script>
+        /**
+         * LUMINA SAFKAN BRIDGE
+         * Connects Blazor WASM to Tauri Rust Backend
+         */
         window.setupTabNavigationListener = async (dotNetRef) => {
-            // Global keyboard shortcuts
+            // 1. Global Keyboard Shortcuts
             window.addEventListener('keydown', (e) => {
-                // Ctrl + L for Address Bar
+                // Ctrl + L: Focus Address Bar
                 if (e.ctrlKey && e.code === 'KeyL') {
                     e.preventDefault();
                     const input = document.querySelector('.url-input');
-                    if (input) {
-                        input.select();
-                        input.focus();
-                    }
+                    if (input) { input.select(); input.focus(); }
                 }
             });
 
+            // 2. Tauri Event Listeners
             if (window.__TAURI__ && window.__TAURI__.event) {
-                // Expose Lumina helper for Blazor
-                window.lumina = {
-                    invoke: async (cmd, args) => {
-                        try {
-                            return await window.__TAURI__.core.invoke(cmd, args);
-                        } catch (e) {
-                            console.error(`Lumina Invoke Error [${cmd}]:`, e);
-                            throw e;
-                        }
+                const eventMap = {
+                    'tab-navigation':    (e) => dotNetRef.invokeMethodAsync('OnTabNavigation', e.payload.label, e.payload.url),
+                    'download-started':  (e) => dotNetRef.invokeMethodAsync('OnDownloadStarted', e.payload),
+                    'download-progress': (e) => dotNetRef.invokeMethodAsync('OnDownloadProgress', e.payload),
+                    'download-finished': (e) => dotNetRef.invokeMethodAsync('OnDownloadFinished', e.payload),
+                    'tab-created':       (e) => dotNetRef.invokeMethodAsync('OnTabCreated', e.payload),
+                    'tab-updated':       (e) => dotNetRef.invokeMethodAsync('OnTabUpdated', e.payload),
+                    'request-new-tab':   (e) => dotNetRef.invokeMethodAsync('OnNewTabRequested', e.payload),
+                    'pwa-can-install':   (e) => dotNetRef.invokeMethodAsync('OnPwaDetected', e.payload.label),
+                    'adblock-stats-update': (e) => dotNetRef.invokeMethodAsync('OnAdblockStatsUpdate', e.payload),
+                    'omnibox-results':      (e) => dotNetRef.invokeMethodAsync('OnOmniboxResults', e.payload),
+                    'toggle-command-palette': () => {
+                        if (window.commandPaletteRef) window.commandPaletteRef.invokeMethodAsync('Toggle');
                     }
                 };
 
-                await window.__TAURI__.event.listen('tab-navigation', (event) => {
-                    console.log("Navigation event:", event);
-                    dotNetRef.invokeMethodAsync('OnTabNavigation', event.payload.label, event.payload.url);
-                });
-                
-                await window.__TAURI__.event.listen('download-started', (event) => {
-                    console.log("Download started:", event);
-                    dotNetRef.invokeMethodAsync('OnDownloadStarted', event.payload);
-                });
-                
-                await window.__TAURI__.event.listen('download-progress', (event) => {
-                    // console.log("Download progress:", event); // Too noisy
-                    dotNetRef.invokeMethodAsync('OnDownloadProgress', event.payload);
-                });
+                // Register all listeners
+                for (const [evt, handler] of Object.entries(eventMap)) {
+                    await window.__TAURI__.event.listen(evt, handler);
+                }
 
-                await window.__TAURI__.event.listen('download-finished', (event) => {
-                    console.log("Download finished:", event);
-                    dotNetRef.invokeMethodAsync('OnDownloadFinished', event.payload);
-                });
+                // 3. Expose Direct Invoke Helper (if needed outside TauriService)
+                window.lumina = {
+                    invoke: async (cmd, args) => window.__TAURI__.core.invoke(cmd, args)
+                };
 
-                await window.__TAURI__.event.listen('tab-created', (event) => {
-                    console.log("Tab created:", event);
-                    dotNetRef.invokeMethodAsync('OnTabCreated', event.payload);
-                });
-
-                await window.__TAURI__.event.listen('tab-updated', (event) => {
-                    console.log("Tab updated:", event);
-                    dotNetRef.invokeMethodAsync('OnTabUpdated', event.payload);
-                });
-
-                await window.__TAURI__.event.listen('request-new-tab', (event) => {
-                    console.log("New tab requested:", event);
-                    dotNetRef.invokeMethodAsync('OnNewTabRequested', event.payload);
-                });
-
-                await window.__TAURI__.event.listen('pwa-can-install', (event) => {
-                    console.log("PWA detected:", event);
-                    dotNetRef.invokeMethodAsync('OnPwaDetected', event.payload.label);
-                });
-
-                await window.__TAURI__.event.listen('adblock-stats-update', (event) => {
-                    // console.log("Adblock stats:", event);
-                    dotNetRef.invokeMethodAsync('OnAdblockStatsUpdate', event.payload);
-                });
-
-                await window.__TAURI__.event.listen('toggle-command-palette', (event) => {
-                     if (window.commandPaletteRef) {
-                         window.commandPaletteRef.invokeMethodAsync('Toggle');
-                     }
-                });
             } else {
-                console.warn("Tauri event API not found");
+                console.warn("Lumina: Tauri environment not detected. Running in browser mode.");
             }
         };
 
@@ -101,11 +113,8 @@
 
         window.measureElementHeight = (selector) => {
             const el = document.querySelector(selector);
-            if (el) {
-                return el.getBoundingClientRect().height;
-            }
-            return 0;
+            return el ? el.getBoundingClientRect().height : 0;
         };
     </script>
-  </body>
+</body>
 </html>

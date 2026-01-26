@@ -24,7 +24,9 @@
                  OnBack="GoBack"
                  OnForward="GoForward"
                  OnRefresh="Refresh"
-                 OnNavigate="Navigate" />
+                 OnNavigate="Navigate"
+                 Suggestions="@SmartSuggestions"
+                 OnInput="HandleSmartInput" />
 
         <!-- Webview Container -->
         <div id="webview-container">
@@ -256,71 +258,71 @@
     private List<FavoriteItem> FavoritesList = new();
     private List<DownloadItem> DownloadsList = new();
     
-    // Suggestions
-    private List<HistoryItem> Suggestions = new();
-    private bool ShowSuggestions => Suggestions.Any() && !string.IsNullOrWhiteSpace(CurrentUrl);
-
+    // Suggestions (Smart Search)
+    private List<OmniBox.SuggestionItem> SmartSuggestions = new();
     private bool _suggestionsLayoutPending = false;
+
+    private async Task HandleSmartInput(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            SmartSuggestions.Clear();
+            _suggestionsLayoutPending = true;
+            StateHasChanged();
+            return;
+        }
+        
+        try
+        {
+            await Tauri.InvokeVoidAsync("request_omnibox_suggestions", new { query = query });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error requesting suggestions: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public void OnOmniboxResults(string json)
+    {
+        try
+        {
+            var result = System.Text.Json.JsonSerializer.Deserialize<OmniboxResponse>(json);
+            if (result != null)
+            {
+                SmartSuggestions = result.Suggestions;
+                _suggestionsLayoutPending = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error parsing omnibox results: {ex.Message}");
+        }
+    }
+
+    public class OmniboxResponse
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("suggestions")]
+        public List<SuggestionItem> Suggestions { get; set; } = new();
+    }
 
     private void HandleCommandPaletteNavigate(string url)
     {
         CurrentUrl = url;
         _ = Navigate();
     }
-
-    private async Task HandleInput(ChangeEventArgs e)
-    {
-        CurrentUrl = e.Value?.ToString() ?? string.Empty;
-        
-        if (string.IsNullOrWhiteSpace(CurrentUrl))
-        {
-            Suggestions.Clear();
-        }
-        else
-        {
-            try
-            {
-                Suggestions = await Tauri.InvokeAsync<List<HistoryItem>>("search_history", new { query = CurrentUrl });
-            }
-            catch (Exception)
-            {
-                Suggestions.Clear();
-            }
-        }
-        _suggestionsLayoutPending = true;
-    }
-
-    private async Task SearchHistory(string query)
-    {
-         try
-        {
-            Suggestions = await Tauri.InvokeAsync<List<HistoryItem>>("search_history", new { query = query });
-            _suggestionsLayoutPending = true;
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error fetching suggestions: {ex.Message}");
-            Suggestions.Clear();
-        }
-    }
-
+    
+    // Obsolete - removed
+    // private async Task SearchHistory(string query) ...
+    
     private async Task UpdateSuggestionsLayout()
     {
         double height = 0;
-        if (ShowSuggestions)
+        if (SmartSuggestions.Count > 0)
         {
-            try 
-            {
-                height = await JsRuntime.InvokeAsync<double>("measureElementHeight", ".suggestions-dropdown");
-                if (height > 0) height += 10; 
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error measuring suggestions height: {ex.Message}");
-                var count = Suggestions.Count;
-                height = Math.Min(count * 55 + 10, 400);
-            }
+            // Approximate height
+             height = Math.Min(SmartSuggestions.Count * 55 + 10, 400);
         }
         
         try
@@ -331,14 +333,6 @@
         {
             Console.WriteLine($"Error setting suggestions height: {ex.Message}");
         }
-    }
-
-    private async Task SelectSuggestion(HistoryItem item)
-    {
-        CurrentUrl = item.Url;
-        Suggestions.Clear();
-        _suggestionsLayoutPending = true;
-        await Navigate();
     }
     
     private string ThemeStyle => $"--bg-color: {(Settings.Theme == "dark" ? "#1B1B1E" : "#ffffff")}; --header-bg: {(Settings.Theme == "dark" ? "#1B1B1E" : "#dee1e6")}; --toolbar-bg: {(Settings.Theme == "dark" ? "#202124" : "#ffffff")}; --menu-bg: {(Settings.Theme == "dark" ? "#292A2D" : "rgba(255, 255, 255, 0.95)")}; --text-color: {(Settings.Theme == "dark" ? "#E8EAED" : "#1f2937")}; --tab-text: {(Settings.Theme == "dark" ? "#9AA0A6" : "#4b5563")}; --tab-active-text: {(Settings.Theme == "dark" ? "#F1F3F4" : "#111827")}; --tab-inactive-bg: {(Settings.Theme == "dark" ? "transparent" : "rgba(229, 231, 235, 0.5)")}; --tab-active-bg: {(Settings.Theme == "dark" ? "#323639" : "#ffffff")}; --tab-hover-bg: {(Settings.Theme == "dark" ? "#28292C" : "rgba(255,255,255,0.5)")}; --btn-hover-bg: {(Settings.Theme == "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)")}; --url-bg: {(Settings.Theme == "dark" ? "#2A2A2B" : "rgba(0,0,0,0.06)")}; --url-bg-focus: {(Settings.Theme == "dark" ? "#3C4043" : "#ffffff")}; --border-color: {(Settings.Theme == "dark" ? "#3C4043" : "rgba(229, 231, 235, 0.5)")}; --accent-color: {Settings.AccentColor}; --border-radius: {(Settings.RoundedCorners ? "12px" : "0px")};";
