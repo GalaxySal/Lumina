@@ -17,7 +17,9 @@ const MEMORYSTATUSEX = extern struct {
 
 // Conditional Extern for Cross-Platform Compatibility
 const Win32 = if (builtin.os.tag == .windows) struct {
-    extern "kernel32" fn GlobalMemoryStatusEx(lpBuffer: *MEMORYSTATUSEX) callconv(.stdcall) c_int;
+    // WINAPI calling convention is stdcall on x86, but C/default on x64.
+    // Since we target x86_64, .C is the correct convention.
+    extern "kernel32" fn GlobalMemoryStatusEx(lpBuffer: *MEMORYSTATUSEX) callconv(.C) c_int;
 } else struct {
     fn GlobalMemoryStatusEx(lpBuffer: *MEMORYSTATUSEX) callconv(.C) c_int {
         _ = lpBuffer;
