@@ -14,6 +14,13 @@ from PySide6.QtCore import QTimer, Qt, QThread, Signal, QRectF
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QDragEnterEvent, QDropEvent
 from moviepy import VideoFileClip
 
+# Check for Local LLM support
+try:
+    from llama_cpp import Llama
+    HAS_LOCAL_LLM = True
+except ImportError:
+    HAS_LOCAL_LLM = False
+
 # --- 🧠 Brain (Hybrid Intelligence Layer) ---
 class Brain:
     """
@@ -24,19 +31,19 @@ class Brain:
     # 2026 Model Registry
     MODELS = {
         "cloud_fast": {
-            "id": "google/gemini-3-flash-preview", # 2026 Standard: High speed, agentic
-            "name": "Gemini 3.0 Flash",
+            "id": "google/gemini-2.0-flash-exp:free", # Using free tier for dev
+            "name": "Gemini 2.0 Flash",
             "context": 1000000
         },
         "cloud_smart": {
-            "id": "google/gemini-3-pro-preview", # 2026 Standard: Frontier reasoning
-            "name": "Gemini 3.0 Pro", 
+            "id": "google/gemini-2.0-pro-exp:free", 
+            "name": "Gemini 2.0 Pro", 
             "context": 1000000
         },
         "cloud_open": {
-            "id": "meta-llama/llama-4-maverick", # 2026 Standard: Open/Maverick 400B MoE
-            "name": "Llama 4 Maverick",
-            "context": 1000000
+            "id": "meta-llama/llama-3.3-70b-instruct:free", 
+            "name": "Llama 3.3",
+            "context": 128000
         },
         "local_efficient": {
             "id": "local/llama-4-scout-4bit", # Local Offline: Llama 4 Scout (Quantized)
@@ -45,38 +52,59 @@ class Brain:
         }
     }
 
+    SYSTEM_PROMPT = """
+    You are Lumina Sidekick, an advanced AI assistant integrated into the Lumina Web Browser.
+    Your goal is to help the user with browsing, coding, and general tasks.
+    You have access to the user's browser context (sometimes).
+    Be concise, helpful, and professional.
+    """
+
     def __init__(self):
         self.active_cloud_model = self.MODELS["cloud_fast"]
         self.active_local_model = self.MODELS["local_efficient"]
         self.offline_mode = False
+        self.local_llm = None # Lazy load
 
     def think(self, query, context=None):
         """
         Decides whether to use Cloud or Local brain based on query complexity and connectivity.
         """
+        # Simple heuristic: if query contains "private" or "offline", use local
+        if "offline" in query.lower() or self.offline_mode:
+             return self.ask_local(query)
         return self.ask_cloud(query, context)
 
     def ask_cloud(self, query, context=None):
-        """Sends query to OpenRouter API (Gemini 3.0 / Llama 4)."""
+        """Sends query to OpenRouter API."""
         api_key = os.getenv("OPENROUTER_API_KEY")
         if not api_key:
-            return "Error: OPENROUTER_API_KEY not found in environment."
+            return "Error: OPENROUTER_API_KEY not found in environment. Please set it in .env file."
 
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://lumina.app", # For OpenRouter rankings
+            "HTTP-Referer": "https://lumina.app", 
             "X-Title": "Lumina Sidekick"
         }
         
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT}
+        ]
+        
+        if context:
+            messages.append({"role": "system", "content": f"Context: {context}"})
+            
+        messages.append({"role": "user", "content": query})
+
         payload = {
             "model": self.active_cloud_model["id"],
-            "messages": [{"role": "user", "content": query}],
+            "messages": messages,
             "temperature": 0.7,
             "max_tokens": 4096
         }
 
         try:
+            print(f"🧠 [Cloud Brain] Sending request to {self.active_cloud_model['name']}...", flush=True)
             response = requests.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers=headers,
@@ -85,7 +113,10 @@ class Brain:
             )
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0]["message"]["content"]
+            else:
+                return "Error: Empty response from Cloud Brain."
         except Exception as e:
             return f"Cloud Brain Error ({self.active_cloud_model['name']}): {str(e)}"
 
@@ -93,8 +124,40 @@ class Brain:
         """
         Uses local Llama 4 instance (Offline Brain).
         """
-        print(f"🧠 [Brain] Thinking locally with {self.active_local_model['name']}...", flush=True)
-        return "Local AI Response (Offline)"
+        if not HAS_LOCAL_LLM:
+             return "Error: Local Brain (llama-cpp-python) is not installed."
+
+        if not self.local_llm:
+             model_path = os.getenv("LOCAL_LLM_PATH", "./models/llama-4-scout-4bit.gguf")
+             if not os.path.exists(model_path):
+                 return f"Error: Local model not found at {model_path}. Please configure LOCAL_LLM_PATH in .env"
+             
+             print(f"🧠 [Local Brain] Loading model from {model_path}...", flush=True)
+             try:
+                 self.local_llm = Llama(
+                     model_path=model_path,
+                     n_ctx=4096,
+                     n_threads=psutil.cpu_count(logical=False) or 4,
+                     verbose=False
+                 )
+             except Exception as e:
+                 return f"Error loading local model: {str(e)}"
+
+        print(f"🧠 [Local Brain] Thinking with {self.active_local_model['name']}...", flush=True)
+        
+        try:
+             # Simple format for instruction-tuned models
+             prompt = f"System: {self.SYSTEM_PROMPT}\nUser: {query}\nAssistant:"
+             output = self.local_llm(
+                 prompt, 
+                 max_tokens=1024, 
+                 stop=["User:", "System:"], 
+                 echo=False,
+                 temperature=0.7
+             )
+             return output['choices'][0]['text'].strip()
+        except Exception as e:
+             return f"Local Brain Error: {str(e)}"
 
 # --- 🎨 Modern Circular Progress Bar ---
 class CircularProgress(QWidget):
@@ -199,11 +262,19 @@ class StdinListener(QThread):
                     data = json.loads(line)
                     if data.get("type") == "omnibox_query":
                         self.handle_omnibox_query(data.get("query", ""))
+                    elif data.get("type") == "command":
+                        cmd = data.get("command", "")
+                        if cmd.startswith("switch_model"):
+                            model_key = cmd.split(" ")[1]
+                            if model_key in self.brain.MODELS:
+                                self.brain.active_cloud_model = self.brain.MODELS[model_key]
+                                print(f"🧠 [Brain] Switched to {self.brain.active_cloud_model['name']}", flush=True)
                     elif data.get("type") == "query":
                          query = data.get("content", "")
+                         context = data.get("context", None) # Support context passing
                          if query.lower().startswith("ask ") or query.lower().startswith("sor "):
                              clean_query = query.split(" ", 1)[1]
-                             response = self.brain.think(clean_query)
+                             response = self.brain.think(clean_query, context)
                              print(json.dumps({"type": "ai_response", "content": response}), flush=True)
 
                 except json.JSONDecodeError:

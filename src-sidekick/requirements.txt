@@ -5,5 +5,5 @@ nuitka
 zstandard
 ordered-set
 requests
-# llama-cpp-python  # Uncomment for local LLM support
+llama-cpp-python  # Uncommented for local LLM support
 python-dotenv
