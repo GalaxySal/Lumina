@@ -70,12 +70,17 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev build-essential curl wget libssl-dev file patchelf libxcb-cursor0 libxcb-xinerama0
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev build-essential curl wget libssl-dev file patchelf libxcb-cursor0 libxcb-xinerama0 cmake ninja-build
 
       - name: Install dependencies (macOS only)
         if: matrix.platform == 'macos-latest'
         run: |
           brew install cmake ninja
+
+      - name: Install dependencies (Windows only)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          pip install cmake ninja
 
       - name: Build Sidecars
         shell: bash
