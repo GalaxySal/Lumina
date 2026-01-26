@@ -1,5 +1,10 @@
 import sys
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 import psutil
 import json
 import requests
@@ -19,18 +24,23 @@ class Brain:
     # 2026 Model Registry
     MODELS = {
         "cloud_fast": {
-            "id": "google/gemini-2.0-flash-exp:free", # 2026 Alias: Gemini 3.0 Flash
+            "id": "google/gemini-3-flash-preview", # 2026 Standard: High speed, agentic
             "name": "Gemini 3.0 Flash",
             "context": 1000000
         },
         "cloud_smart": {
-            "id": "google/gemini-2.0-pro-exp-02-05:free", # 2026 Alias: Gemini 3.0 Pro
+            "id": "google/gemini-3-pro-preview", # 2026 Standard: Frontier reasoning
             "name": "Gemini 3.0 Pro", 
-            "context": 2000000
+            "context": 1000000
+        },
+        "cloud_open": {
+            "id": "meta-llama/llama-4-maverick", # 2026 Standard: Open/Maverick 400B MoE
+            "name": "Llama 4 Maverick",
+            "context": 1000000
         },
         "local_efficient": {
-            "id": "local/llama-4-8b-instruct", # Local Offline Model
-            "name": "Llama 4 (8B)",
+            "id": "local/llama-4-scout-4bit", # Local Offline: Llama 4 Scout (Quantized)
+            "name": "Llama 4 Scout (Local)",
             "type": "offline"
         }
     }
@@ -47,14 +57,37 @@ class Brain:
         return self.ask_cloud(query, context)
 
     def ask_cloud(self, query, context=None):
-        """
-        Sends query to OpenRouter API (Cloud Brain).
-        """
-        print(f"🧠 [Brain] Thinking with {self.active_cloud_model['name']}...", flush=True)
-        # Placeholder for actual API call (OpenRouter)
-        # In 2026, we expect < 100ms latency for Flash models
-        # For now, return a simulated response if not connected
-        return f"AI Response to: {query} (via {self.active_cloud_model['name']})"
+        """Sends query to OpenRouter API (Gemini 3.0 / Llama 4)."""
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            return "Error: OPENROUTER_API_KEY not found in environment."
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://lumina.app", # For OpenRouter rankings
+            "X-Title": "Lumina Sidekick"
+        }
+        
+        payload = {
+            "model": self.active_cloud_model["id"],
+            "messages": [{"role": "user", "content": query}],
+            "temperature": 0.7,
+            "max_tokens": 4096
+        }
+
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except Exception as e:
+            return f"Cloud Brain Error ({self.active_cloud_model['name']}): {str(e)}"
 
     def ask_local(self, query):
         """

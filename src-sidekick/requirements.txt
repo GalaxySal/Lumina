@@ -6,4 +6,4 @@ zstandard
 ordered-set
 requests
 # llama-cpp-python  # Uncomment for local LLM support
-requests
+python-dotenv
