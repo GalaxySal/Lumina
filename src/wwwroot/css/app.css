@@ -21,6 +21,7 @@
   --sidebar-width: 240px;
   --url-bg-focus: rgba(255, 255, 255, 0.9);
   --header-height: 104px;
+  --text-scale: 1;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -52,6 +53,7 @@ body {
     user-select: none;
     -webkit-user-select: none;
     transition: color 0.2s ease;
+    font-size: calc(16px * var(--text-scale));
 }
 
 .browser-container {

@@ -411,6 +411,12 @@
         {
              targetUrl = "lumina-app://localhost/network";
         }
+        else if (targetUrl.Equals("lumina flags", StringComparison.OrdinalIgnoreCase) || 
+                 targetUrl.Equals("about:config", StringComparison.OrdinalIgnoreCase) ||
+                 targetUrl.Equals("flags", StringComparison.OrdinalIgnoreCase))
+        {
+             targetUrl = "lumina-app://localhost/flags";
+        }
         
         // Standardize lumina:// to lumina-app://localhost/
         if (targetUrl.StartsWith("lumina:", StringComparison.OrdinalIgnoreCase))

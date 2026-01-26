@@ -69,6 +69,14 @@
                          <span class="icon">🧹</span>
                          <span class="text">Clean Page (Force Mode)</span>
                     </div>
+                    <div class="command-item @(SelectedIndex == baseIndex + 4 ? "selected" : "")" @onclick="@(() => SelectAction(4))" @onmouseover="@(() => SelectedIndex = baseIndex + 4)">
+                         <span class="icon">🛠️</span>
+                         <span class="text">Experimental Flags</span>
+                    </div>
+                    <div class="command-item @(SelectedIndex == baseIndex + 5 ? "selected" : "")" @onclick="@(() => SelectAction(5))" @onmouseover="@(() => SelectedIndex = baseIndex + 5)">
+                         <span class="icon">📸</span>
+                         <span class="text">Take Screenshot</span>
+                    </div>
                 </div>
             }
             else
@@ -417,6 +425,8 @@
             else if (index == 1) targetUrl = "https://lumina-home"; // Internal
             else if (index == 2) targetUrl = "https://lumina-settings"; // Internal
             else if (index == 3) { await CleanPage(); return; }
+            else if (index == 4) targetUrl = "lumina://flags";
+            else if (index == 5) { await TakeScreenshot(); return; }
         }
         else
         {
@@ -435,6 +445,43 @@
     private async Task CleanPage()
     {
         await JsRuntime.InvokeVoidAsync("window.lumina.invoke", "clean_page");
+        Close();
+    }
+
+    private async Task TakeScreenshot()
+    {
+        // Simple JS-based screenshot of the current view
+        await JsRuntime.InvokeVoidAsync("eval", @"
+            (async () => {
+                try {
+                    // Modern Screen Capture API
+                    const stream = await navigator.mediaDevices.getDisplayMedia({ 
+                        preferCurrentTab: true,
+                        video: { mediaSource: 'tab' }
+                    });
+                    
+                    const track = stream.getVideoTracks()[0];
+                    const imageCapture = new ImageCapture(track);
+                    const bitmap = await imageCapture.grabFrame();
+                    
+                    track.stop(); // Stop sharing immediately
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = bitmap.width;
+                    canvas.height = bitmap.height;
+                    const context = canvas.getContext('2d');
+                    context.drawImage(bitmap, 0, 0);
+                    
+                    const link = document.createElement('a');
+                    link.download = 'lumina-screenshot-' + Date.now() + '.png';
+                    link.href = canvas.toDataURL();
+                    link.click();
+                } catch (e) {
+                    console.error('Screenshot failed:', e);
+                    alert('Screenshot failed or cancelled.');
+                }
+            })()
+        ");
         Close();
     }
 

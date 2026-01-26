@@ -1,0 +1,300 @@
+@page "/flags"
+@inject IJSRuntime JsRuntime
+@inject tauri_browser.Services.TauriService Tauri
+@using tauri_browser.Models
+
+<div class="flags-container">
+    <div class="header">
+        <h1>🛠️ Experimental Features</h1>
+        <p>Warning: These features are experimental and may break the browser. Use with caution!</p>
+    </div>
+
+    <div class="search-bar">
+        <input type="text" placeholder="Search flags..." @bind="SearchTerm" @bind:event="oninput" />
+    </div>
+
+    <div class="flags-list">
+        @foreach (var flag in FilteredFlags)
+        {
+            <div class="flag-item">
+                <div class="flag-info">
+                    <h3>@flag.Name</h3>
+                    <p>@flag.Description</p>
+                </div>
+                <div class="flag-control">
+                    @if (flag.Type == FlagType.Boolean)
+                    {
+                        <label class="switch">
+                            <input type="checkbox" checked="@(flag.Value == "true")" @onchange="@(e => UpdateFlag(flag, e.Value?.ToString()?.ToLower() == "true" ? "true" : "false"))" />
+                            <span class="slider round"></span>
+                        </label>
+                    }
+                    else if (flag.Type == FlagType.Select)
+                    {
+                        <select value="@flag.Value" @onchange="@(e => UpdateFlag(flag, e.Value?.ToString() ?? ""))">
+                            @foreach (var opt in flag.Options)
+                            {
+                                <option value="@opt">@opt</option>
+                            }
+                        </select>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+    
+    <div class="actions">
+        <button class="btn-reset" @onclick="ResetFlags">Reset All to Default</button>
+        <button class="btn-restart" @onclick="RestartBrowser">Relaunch Lumina</button>
+    </div>
+</div>
+
+<style>
+    .flags-container {
+        padding: 40px;
+        max-width: 800px;
+        margin: 0 auto;
+        color: var(--text-color);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .header h1 {
+        font-size: 2rem;
+        margin-bottom: 10px;
+        background: linear-gradient(90deg, #FF6B6B, #FF8E53);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .header p {
+        color: #ef4444;
+        font-weight: 500;
+        background: rgba(239, 68, 68, 0.1);
+        padding: 10px;
+        border-radius: 8px;
+        display: inline-block;
+    }
+
+    .search-bar {
+        margin: 30px 0;
+    }
+
+    .search-bar input {
+        width: 100%;
+        padding: 12px 20px;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        background: var(--url-bg);
+        color: var(--text-color);
+        font-size: 1.1rem;
+        outline: none;
+    }
+
+    .flags-list {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .flag-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        background: var(--menu-bg);
+        border-radius: 12px;
+        box-shadow: var(--shadow-sm);
+        border: 1px solid var(--border-color);
+    }
+
+    .flag-info h3 {
+        margin: 0 0 5px 0;
+        font-size: 1.1rem;
+    }
+
+    .flag-info p {
+        margin: 0;
+        color: #888;
+        font-size: 0.9rem;
+    }
+
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 50px;
+        height: 24px;
+    }
+
+    .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: .4s;
+    }
+
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 16px;
+        width: 16px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: .4s;
+    }
+
+    input:checked + .slider {
+        background-color: var(--accent-color);
+    }
+
+    input:checked + .slider:before {
+        transform: translateX(26px);
+    }
+
+    .slider.round {
+        border-radius: 34px;
+    }
+
+    .slider.round:before {
+        border-radius: 50%;
+    }
+    
+    select {
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-color);
+        color: var(--text-color);
+    }
+
+    .actions {
+        margin-top: 40px;
+        display: flex;
+        gap: 20px;
+    }
+
+    button {
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+        transition: opacity 0.2s;
+    }
+
+    button:hover { opacity: 0.8; }
+
+    .btn-reset { background: #e5e7eb; color: #374151; }
+    .btn-restart { background: var(--accent-color); color: white; }
+
+</style>
+
+@code {
+    private string SearchTerm { get; set; } = "";
+    private List<FlagItem> Flags = new List<FlagItem>();
+
+    private IEnumerable<FlagItem> FilteredFlags => 
+        string.IsNullOrWhiteSpace(SearchTerm) 
+            ? Flags 
+            : Flags.Where(f => f.Name.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) || 
+                               f.Description.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase));
+
+    protected override void OnInitialized()
+    {
+        // Define default flags
+        // In a real scenario, these would be loaded from Rust/Storage
+        Flags = new List<FlagItem>
+        {
+            new FlagItem { 
+                Id = "text_scaling", 
+                Name = "Text Scaling Factor", 
+                Description = "Increases text size without zooming layout. Equivalent to Firefox 'Zoom Text Only'.", 
+                Type = FlagType.Select,
+                Value = "100%",
+                Options = new List<string> { "100%", "110%", "125%", "150%", "200%" }
+            },
+            new FlagItem { 
+                Id = "smooth_scrolling", 
+                Name = "Smooth Scrolling", 
+                Description = "Animate scrolling for a smoother experience.", 
+                Type = FlagType.Boolean,
+                Value = "true" 
+            },
+            new FlagItem { 
+                Id = "experimental_adblock", 
+                Name = "Experimental AdBlock Engine", 
+                Description = "Enables Rust-based heuristic ad blocking (Beta).", 
+                Type = FlagType.Boolean,
+                Value = "true" 
+            },
+            new FlagItem { 
+                Id = "glass_morphism", 
+                Name = "Glass Morphism UI", 
+                Description = "Enable transparent blur effects on window background.", 
+                Type = FlagType.Boolean,
+                Value = "true" 
+            },
+            new FlagItem { 
+                Id = "hardware_acceleration", 
+                Name = "Hardware Acceleration", 
+                Description = "Use GPU for rendering web content (Requires Restart).", 
+                Type = FlagType.Boolean,
+                Value = "true" 
+            }
+        };
+    }
+
+    private async Task UpdateFlag(FlagItem flag, string newValue)
+    {
+        flag.Value = newValue;
+        
+        if (flag.Id == "text_scaling")
+        {
+            await JsRuntime.InvokeVoidAsync("lumina.setTextScale", newValue);
+        }
+        else if (flag.Id == "glass_morphism")
+        {
+             // Toggle class on body or notify Rust
+        }
+        
+        // Save to persistent storage (mock for now or via Tauri)
+        Console.WriteLine($"Flag updated: {flag.Id} = {newValue}");
+    }
+
+    private void ResetFlags()
+    {
+        OnInitialized();
+    }
+
+    private void RestartBrowser()
+    {
+        // Invoke Rust restart
+    }
+
+    public class FlagItem
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public FlagType Type { get; set; }
+        public string Value { get; set; }
+        public List<string> Options { get; set; } = new();
+    }
+
+    public enum FlagType
+    {
+        Boolean,
+        Select,
+        Input
+    }
+}
