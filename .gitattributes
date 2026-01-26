@@ -2,6 +2,9 @@
 * text=auto
 # Zig
 *.zig linguist-language=Zig
+
+# Go
+*.go linguist-language=Go
 # Razor / Blazor
 *.razor linguist-language=C#
 *.cshtml linguist-language=C#

@@ -1,16 +1,19 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    // ReleaseSmall is crucial for the <1MB requirement
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
 
-    const lib = b.addStaticLibrary(.{
-        .name = "lumina_zig",
-        .root_source_file = .{ .path = "main.zig" },
-        .target = target,
-        .optimize = optimize,
+    const exe = b.addExecutable(.{
+        .name = "lumina-sentinel",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .strip = true, // Remove symbols to reduce size
+        }),
     });
 
-    lib.linkLibC();
-    b.installArtifact(lib);
+    b.installArtifact(exe);
 }

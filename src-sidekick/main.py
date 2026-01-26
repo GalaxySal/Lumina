@@ -2,7 +2,7 @@ import sys
 import os
 import psutil
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QFrame, QSizePolicy)
+                             QLabel, QFrame, QSizePolicy, QPushButton)
 from PySide6.QtCore import QTimer, Qt, QThread, Signal, QRectF
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QDragEnterEvent, QDropEvent
 from moviepy import VideoFileClip
@@ -136,33 +136,50 @@ class LuminaSidekick(QMainWindow):
         
         self.main_layout.addWidget(stats_container)
 
-        # 3. Converter Alanı (Drag & Drop)
-        self.main_layout.addSpacing(10)
-        self.main_layout.addWidget(QLabel("MEDYA DÖNÜŞTÜRÜCÜ"))
-        
-        self.drop_area = QLabel("\n📂\n\nDosyayı Buraya Sürükleyin\n(.mp4, .avi, .mov)")
+        # 3. Converter Drop Area
+        self.drop_area = QWidget()
         self.drop_area.setObjectName("DropArea")
-        self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.drop_area.setMinimumHeight(180)
-        self.drop_area.setStyleSheet("font-size: 14px; color: #888;")
-        self.drop_area.setAcceptDrops(True)
+        drop_layout = QVBoxLayout(self.drop_area)
         
-        # Drag & Drop olaylarını bağla
-        self.drop_area.dragEnterEvent = self.dragEnterEvent
-        self.drop_area.dropEvent = self.dropEvent
+        drop_label = QLabel("Drag & Drop Video File")
+        drop_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        drop_label.setStyleSheet("color: #aaa; font-size: 16px; border: none; background: transparent;")
+        drop_layout.addWidget(drop_label)
+        
+        # Restore Drag & Drop
+        self.drop_area.setAcceptDrops(True)
+        # We need to override the event handlers for the widget, but since we can't easily subclass here without more code,
+        # let's just use the main window's events which are redirected or keep the previous logic.
+        # Actually, let's just re-add the assignment if the methods exist on the main window.
+        # But wait, assigning methods to an instance like this in Python works but is hacky.
+        # Better: Just let the Main Window handle drops if setAcceptDrops is True on it.
         
         self.main_layout.addWidget(self.drop_area)
-        
-        # Durum Çubuğu (Dönüştürme bilgisi için)
-        self.status_label = QLabel("Hazır")
-        self.status_label.setStyleSheet("color: #666; font-size: 12px;")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.main_layout.addWidget(self.status_label)
 
-        # Timer (Sistem istatistikleri için)
+        # 4. Lua Bridge Test (The Bridge)
+        self.lua_btn = QPushButton("FIRE LUA BRIDGE")
+        self.lua_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lua_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7C4DFF; color: white; border-radius: 8px;
+                padding: 12px; font-weight: bold; font-size: 14px; letter-spacing: 1px;
+            }
+            QPushButton:hover { background-color: #651FFF; }
+        """)
+        self.lua_btn.clicked.connect(self.fire_lua_bridge)
+        self.main_layout.addWidget(self.lua_btn)
+
+        # Timer for system stats
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_stats)
-        self.timer.start(1000) # 1 saniye
+        self.timer.start(1000)
+
+        self.setAcceptDrops(True)
+
+    def fire_lua_bridge(self):
+        # Sends a Lua script to Rust via stdout
+        # Rust captures this, executes Lua, and updates the frontend
+        print('LUA: return "Bridge Successful: " .. os.date("%Y-%m-%d %H:%M:%S")', flush=True)
 
     def update_stats(self):
         self.cpu_circle.set_value(psutil.cpu_percent())

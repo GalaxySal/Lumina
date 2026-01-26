@@ -1,5 +1,6 @@
 mod data;
 mod history_manager;
+mod security; // Added security module
 use history_manager::HistoryManager;
 use data::{AppDataStore, HistoryItem, FavoriteItem, AppSettings};
 use tauri::{AppHandle, Manager, WebviewUrl, Emitter, Listener, Url};
@@ -14,14 +15,16 @@ use adblock::engine::Engine;
 use adblock::lists::FilterSet;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState, Modifiers, Code};
 use base64::Engine as _;
+use mlua::Lua;
 
 static ADBLOCK_ENGINE: OnceLock<Arc<Mutex<Engine>>> = OnceLock::new();
 static ADBLOCK_STATS: OnceLock<Arc<Mutex<HashMap<String, u32>>>> = OnceLock::new();
 
-#[cfg(zig_enabled)]
-extern "C" {
-    fn lumina_init_security();
+struct LuaState {
+    lua: Mutex<Lua>,
 }
+
+
 
 #[derive(Clone, serde::Serialize)]
 struct AdblockStatsPayload {
@@ -276,6 +279,56 @@ fn navigate(app: AppHandle, label: String, url: String) {
 }
 
 fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
+    let lumina_style = r#"
+        <style>
+            :root { --primary: #05B8CC; --bg: #121212; --card: #1e1e1e; --text: #e0e0e0; --text-dim: #a0a0a0; }
+            body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 40px; background: var(--bg); color: var(--text); max-width: 900px; margin: 0 auto; }
+            h1 { border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; font-weight: 600; color: var(--primary); letter-spacing: 1px; }
+            .item { background: var(--card); padding: 15px 20px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid var(--primary); display: flex; align-items: center; gap: 20px; transition: transform 0.2s; }
+            .item:hover { transform: translateX(5px); }
+            .time, .meta { color: var(--text-dim); font-size: 0.85em; white-space: nowrap; }
+            .title, .filename { font-weight: 500; margin-bottom: 4px; color: #fff; font-size: 1.1em; }
+            .url a { color: var(--text-dim); font-size: 0.9em; text-decoration: none; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .url a:hover { color: var(--primary); }
+            button { padding: 8px 16px; cursor: pointer; border: 1px solid #333; background: #2d2d2d; border-radius: 6px; color: #fff; transition: all 0.2s; }
+            button:hover { background: var(--primary); border-color: var(--primary); color: #000; }
+            .empty-state { text-align: center; color: var(--text-dim); padding: 60px; font-size: 1.2em; border: 2px dashed #333; border-radius: 12px; }
+            /* Scrollbar */
+            ::-webkit-scrollbar { width: 10px; }
+            ::-webkit-scrollbar-track { background: var(--bg); }
+            ::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
+            ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+            @keyframes slideIn { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        </style>
+        <script>
+            (function() {
+                if (window.__TAURI__) {
+                    window.__TAURI__.event.listen('lua-bridge-message', (event) => {
+                        console.log("Lua Bridge:", event.payload);
+                        let el = document.getElementById('bridge-msg');
+                        if (!el) {
+                            el = document.createElement('div');
+                            el.id = 'bridge-msg';
+                            el.style.cssText = "position: fixed; bottom: 20px; right: 20px; background: #7C4DFF; color: white; padding: 15px; border-radius: 8px; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: slideIn 0.3s ease-out; font-weight: 500; display: flex; align-items: center; gap: 10px;";
+                            document.body.appendChild(el);
+                        }
+                        el.innerHTML = "<span>🔮</span> " + event.payload;
+                        
+                        // Auto hide after 5s
+                        if (window.bridgeTimeout) clearTimeout(window.bridgeTimeout);
+                        window.bridgeTimeout = setTimeout(() => {
+                            if(el) {
+                                el.style.opacity = '0';
+                                el.style.transform = 'translateY(100%)';
+                                setTimeout(() => el.remove(), 300);
+                            }
+                        }, 5000);
+                    });
+                }
+            })();
+        </script>
+    "#;
+
     match path {
         "history" => {
             let history_manager = app.state::<HistoryManager>();
@@ -283,7 +336,6 @@ fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
             
             let mut items_html = String::new();
             for item in history {
-                // Convert timestamp to readable date (simplified)
                 let date = chrono::DateTime::from_timestamp(item.last_visit, 0)
                     .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
                     .unwrap_or_else(|| "Unknown".to_string());
@@ -308,26 +360,16 @@ fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
                 r#"<!DOCTYPE html>
                 <html>
                 <head>
-                    <title>History</title>
+                    <title>History - Lumina</title>
                     <meta charset="UTF-8">
-                    <style>
-                        body {{ font-family: system-ui, -apple-system, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
-                        h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; font-weight: 600; }}
-                        .item {{ background: white; padding: 15px 20px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid #3b82f6; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 20px; }}
-                        .time {{ color: #9ca3af; font-size: 0.85em; white-space: nowrap; min-width: 120px; }}
-                        .info {{ flex: 1; overflow: hidden; }}
-                        .title {{ font-weight: 500; margin-bottom: 2px; color: #1f2937; }}
-                        .url a {{ color: #6b7280; font-size: 0.9em; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }}
-                        .url a:hover {{ color: #2563eb; text-decoration: underline; }}
-                        .empty-state {{ text-align: center; color: #6b7280; padding: 60px; }}
-                    </style>
+                    {}
                 </head>
                 <body>
                     <h1>History</h1>
                     <div id="list">{}</div>
                 </body>
                 </html>"#,
-                items_html
+                lumina_style, items_html
             ))
         },
         "downloads" => {
@@ -337,7 +379,7 @@ fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
             let mut items_html = String::new();
             for item in downloads.iter().rev() {
                  let finished = item.status == "completed";
-                 let status_color = if finished { "#10b981" } else { "#f59e0b" };
+                 let status_color = if finished { "#00E676" } else { "#FFAB40" }; // Material Green/Orange
                  let status_text = if finished { "Completed" } else { "Downloading..." };
                  
                  let date = if item.added_at > 0 {
@@ -349,20 +391,21 @@ fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
                  };
 
                  items_html.push_str(&format!(
-                    r#"<div class="item">
-                        <div class="icon">⬇️</div>
+                    r#"<div class="item" style="border-left-color: {};">
+                        <div class="icon" style="font-size: 24px; width: 40px; text-align: center;">⬇️</div>
                         <div class="info">
                             <div class="filename">{}</div>
                             <div class="url"><a href="{}">{}</a></div>
-                            <div class="meta" style="color: {};">{} • {} • {}</div>
+                            <div class="meta" style="color: var(--text-dim);">{} • {} • {}</div>
                         </div>
                         <div class="actions">
                             <button onclick="window.__TAURI__.core.invoke('open_file', {{ path: '{}' }})">Open</button>
-                            <button onclick="window.__TAURI__.core.invoke('show_in_folder', {{ path: '{}' }})">Show in Folder</button>
+                            <button onclick="window.__TAURI__.core.invoke('show_in_folder', {{ path: '{}' }})">Folder</button>
                         </div>
                     </div>"#,
+                    status_color,
                     item.file_name, item.url, item.url, 
-                    status_color, status_text, item.path, date,
+                    status_text, item.path, date,
                     item.path.replace("\\", "\\\\"), item.path.replace("\\", "\\\\")
                 ));
             }
@@ -375,29 +418,16 @@ fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
                 r#"<!DOCTYPE html>
                 <html>
                 <head>
-                    <title>Downloads</title>
+                    <title>Downloads - Lumina</title>
                     <meta charset="UTF-8">
-                    <style>
-                        body {{ font-family: system-ui, -apple-system, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
-                        h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; font-weight: 600; }}
-                        .item {{ background: white; padding: 20px; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 20px; }}
-                        .icon {{ font-size: 24px; background: #eff6ff; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }}
-                        .info {{ flex: 1; overflow: hidden; }}
-                        .filename {{ font-weight: 600; font-size: 1.1em; margin-bottom: 4px; }}
-                        .url a {{ color: #6b7280; font-size: 0.9em; text-decoration: none; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-                        .meta {{ font-size: 0.85em; margin-top: 4px; font-weight: 500; }}
-                        .actions {{ display: flex; gap: 10px; }}
-                        button {{ padding: 8px 16px; cursor: pointer; border: 1px solid #d1d5db; background: white; border-radius: 6px; font-size: 0.9em; transition: all 0.2s; color: #374151; }}
-                        button:hover {{ background: #f3f4f6; border-color: #9ca3af; }}
-                        .empty-state {{ text-align: center; color: #6b7280; padding: 60px; font-size: 1.1em; }}
-                    </style>
+                    {}
                 </head>
                 <body>
                     <h1>Downloads</h1>
                     <div id="list">{}</div>
                 </body>
                 </html>"#,
-                items_html
+                lumina_style, items_html
             ))
         },
         "favorites" | "bookmarks" => {
@@ -409,13 +439,13 @@ fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
             for item in favorites {
                 items_html.push_str(&format!(
                     r#"<div class="item">
-                        <div class="icon">★</div>
+                        <div class="icon" style="color: #FFD700; font-size: 24px;">★</div>
                         <div class="info">
                             <div class="filename">{}</div>
                             <div class="url"><a href="{}">{}</a></div>
                         </div>
                         <div class="actions">
-                            <button class="danger" onclick="window.__TAURI__.core.invoke('remove_favorite', {{ url: '{}' }}).then(() => window.location.reload())">Remove</button>
+                            <button style="border-color: #ef5350; color: #ef5350;" onmouseover="this.style.background='#ef5350'; this.style.color='white'" onmouseout="this.style.background='transparent'; this.style.color='#ef5350'" onclick="window.__TAURI__.core.invoke('remove_favorite', {{ url: '{}' }}).then(() => window.location.reload())">Remove</button>
                         </div>
                     </div>"#,
                     item.title, item.url, item.url, item.url
@@ -430,21 +460,9 @@ fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
                 r#"<!DOCTYPE html>
                 <html>
                 <head>
-                    <title>Favorites</title>
+                    <title>Favorites - Lumina</title>
                     <meta charset="UTF-8">
-                    <style>
-                        body {{ font-family: system-ui, -apple-system, sans-serif; padding: 40px; background: #f9fafb; color: #111827; max-width: 800px; margin: 0 auto; }}
-                        h1 {{ border-bottom: 1px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; font-weight: 600; }}
-                        .item {{ background: white; padding: 20px; margin-bottom: 15px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 20px; }}
-                        .icon {{ color: #fbbf24; font-size: 24px; }}
-                        .info {{ flex: 1; overflow: hidden; }}
-                        .filename {{ font-weight: 600; font-size: 1.1em; margin-bottom: 4px; }}
-                        .url a {{ color: #6b7280; font-size: 0.9em; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }}
-                        .actions button {{ padding: 8px 16px; cursor: pointer; border: 1px solid #d1d5db; background: white; border-radius: 6px; font-size: 0.9em; color: #374151; }}
-                        .actions button.danger {{ color: #dc2626; border-color: #fca5a5; }}
-                        .actions button.danger:hover {{ background: #fef2f2; }}
-                        .empty-state {{ text-align: center; color: #6b7280; padding: 60px; }}
-                    </style>
+                    {}
                 </head>
                 <body>
                     <h1>Favorites</h1>
@@ -453,7 +471,7 @@ fn get_internal_page_html(app: &AppHandle, path: &str) -> Option<String> {
                     </div>
                 </body>
                 </html>"#,
-                items_html
+                lumina_style, items_html
             ))
         },
         "settings" => {
@@ -2699,6 +2717,10 @@ async fn download_file(app: AppHandle, url: String, file_name: String) {
                 }
             }
             
+            // Ensure file is written and closed
+            let _ = file.sync_all().await;
+            drop(file);
+
             manager.update_status(&url, "completed");
             manager.save();
 
@@ -2888,6 +2910,19 @@ fn run_sidekick(app: tauri::AppHandle) -> Result<String, String> {
     Ok("Sidekick started".to_string())
 }
 
+#[tauri::command]
+fn run_lua_code(app: AppHandle, code: String) -> Result<String, String> {
+    let state = app.state::<LuaState>();
+    let result = {
+        if let Ok(lua) = state.lua.lock() {
+            lua.load(&code).eval::<String>().map_err(|e| e.to_string())
+        } else {
+            Err("Failed to lock Lua state".to_string())
+        }
+    };
+    result
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -2964,14 +2999,45 @@ pub fn run() {
         })
         .manage(PwaState { icons: std::sync::Mutex::new(std::collections::HashMap::new()) })
         .setup(|app| {
-            // Start Lumina Sidekick (GUI) - Fire and forget, no restart loop for GUI
+            // Initialize Lua
+            app.manage(LuaState { lua: Mutex::new(Lua::new()) });
+
+            // Start Lumina Sidekick (GUI) with output capture for "The Bridge"
             let sidekick_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 use tauri_plugin_shell::ShellExt;
+                use tauri_plugin_shell::process::CommandEvent;
+                
                 println!("Starting Lumina Sidekick...");
                 if let Ok(cmd) = sidekick_handle.shell().sidecar("lumina-sidekick") {
-                    if let Err(e) = cmd.spawn() {
-                        eprintln!("Failed to spawn Sidekick: {}", e);
+                    match cmd.spawn() {
+                        Ok((mut rx, _child)) => {
+                            while let Some(event) = rx.recv().await {
+                                if let CommandEvent::Stdout(line_bytes) = event {
+                                    let line = String::from_utf8_lossy(&line_bytes);
+                                    if line.starts_with("LUA:") {
+                                        let script = line.trim_start_matches("LUA:").trim().to_string();
+                                        println!("Bridge: Executing Lua from Sidekick: {}", script);
+                                        
+                                        if let Some(state) = sidekick_handle.try_state::<LuaState>() {
+                                            if let Ok(lua) = state.lua.lock() {
+                                                // Run Lua and get result string
+                                                match lua.load(&script).eval::<String>() {
+                                                    Ok(res) => {
+                                                        // Send to all windows
+                                                        let _ = sidekick_handle.emit("lua-bridge-message", res);
+                                                    }
+                                                    Err(e) => {
+                                                        eprintln!("Lua Bridge Error: {}", e);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("Failed to spawn Sidekick: {}", e),
                     }
                 }
             });
@@ -3057,11 +3123,14 @@ pub fn run() {
             });
 
             // Initialize Zig Security Layer
-            #[cfg(zig_enabled)]
-            unsafe {
-                lumina_init_security();
-                println!("Lumina Security Layer (Zig) initialized.");
-            }
+            // #[cfg(zig_enabled)]
+            // unsafe {
+            //    lumina_init_security();
+            //    println!("Lumina Security Layer (Zig) initialized.");
+            // }
+
+            // Initialize Rust Native Security Layer
+            security::init();
 
             // Deep Link Registration
             #[cfg(any(windows, target_os = "linux"))]
@@ -3290,7 +3359,8 @@ pub fn run() {
             clean_page,
             run_kip_code,
             run_networking_command,
-            run_sidekick
+            run_sidekick,
+            run_lua_code
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
