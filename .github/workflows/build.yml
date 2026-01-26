@@ -101,6 +101,7 @@ jobs:
           
           # Build Lumina Sidekick (Python) using Nuitka
           echo "Building Lumina Sidekick with Nuitka..."
+          pip install --upgrade pip setuptools wheel cmake ninja
           pip install -r src-sidekick/requirements.txt
           
           cd src-sidekick
