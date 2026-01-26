@@ -23,7 +23,7 @@
           ],
           "state": "active"
         },
-        "additionalBrowserArgs": "--ignore-certificate-errors --disable-gpu --disable-gpu-compositing"
+        "additionalBrowserArgs": "--ignore-certificate-errors"
       }
     ],
     "security": {
