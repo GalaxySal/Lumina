@@ -2881,6 +2881,8 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
 
                     // Force resize to ensure visibility (Fix for black screen / 0x0 size)
                     let _ = webview.set_size(tauri::LogicalSize::new(tab_width, tab_height));
+                    // Force position to ensure it doesn't overlap with the top bar (Fix for production layout issue)
+                    let _ = webview.set_position(tauri::LogicalPosition::new(x, y));
 
                     let _ = app.emit::<TabCreatedPayload>("tab-created", TabCreatedPayload {
                         label: label.clone(),
