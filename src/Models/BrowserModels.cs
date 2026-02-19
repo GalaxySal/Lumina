@@ -14,6 +14,10 @@ namespace tauri_browser.Models
         public bool IsPwaAvailable { get; set; } = false;
         public uint BlockedAdsCount { get; set; } = 0;
         public bool IsPinned { get; set; } = false;
+        [JsonPropertyName("is_incognito")]
+        public bool IsIncognito { get; set; } = false;
+        [JsonPropertyName("zoom_level")]
+        public int ZoomLevel { get; set; } = 100;
     }
 
     public class CreateTabArgs
@@ -122,5 +126,8 @@ namespace tauri_browser.Models
         public string AccentColor { get; set; } = "#3b82f6";
         public bool VerticalTabs { get; set; } = false;
         public bool RoundedCorners { get; set; } = true;
+        public bool EnableCookies { get; set; } = true;
+        public bool EnableFormData { get; set; } = true;
+        public long CookieExpiresDays { get; set; } = 365;
     }
 }

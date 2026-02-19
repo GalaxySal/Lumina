@@ -37,7 +37,7 @@ fn create_lua_runtime() -> Lua {
     let _ = lua.load("
         -- Custom Lumina API
         lumina = {
-            version = '0.3.5',
+            version = '0.3.6',
             platform = 'windows'
         }
     ").exec();
@@ -3322,6 +3322,43 @@ fn get_extension_path(app: &AppHandle) -> Option<PathBuf> {
     }
 }
 
+// === New Browser Feature Commands ===
+
+#[tauri::command]
+fn set_zoom_level(history_manager: tauri::State<'_, HistoryManager>, domain: String, zoom: i32) -> Result<(), String> {
+    history_manager.set_zoom_level(&domain, zoom).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_zoom_level(history_manager: tauri::State<'_, HistoryManager>, domain: String) -> Result<i32, String> {
+    history_manager.get_zoom_level(&domain).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_cookie(history_manager: tauri::State<'_, HistoryManager>, domain: String, name: String, value: String, expires: Option<i64>, path: Option<String>, secure: bool, http_only: bool) -> Result<(), String> {
+    let p = path.unwrap_or_else(|| "/".to_string());
+    let cookie = history_manager::CookieItem {
+        domain,
+        name,
+        value,
+        expires,
+        path: p,
+        secure,
+        http_only,
+    };
+    history_manager.set_cookie(cookie).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_cookies(history_manager: tauri::State<'_, HistoryManager>, domain: String) -> Result<Vec<history_manager::CookieItem>, String> {
+    history_manager.get_cookies(&domain).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_cookie(history_manager: tauri::State<'_, HistoryManager>, domain: String, name: String) -> Result<(), String> {
+    history_manager.delete_cookie(&domain, &name).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -3866,6 +3903,12 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            // New Feature Commands
+            set_zoom_level,
+            get_zoom_level,
+            set_cookie,
+            get_cookies,
+            delete_cookie,
             navigate, 
             force_internal_navigate,
             go_back, 

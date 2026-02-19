@@ -27,7 +27,7 @@ if ($TargetTriple -match "windows") { $Ext = ".exe" }
 # ---------------------------------------------------------
 # 1. Build Go Sidecar (lumina-net)
 # ---------------------------------------------------------
-Write-Host "`n🔨 Building Go Sidecar (lumina-net)..." -ForegroundColor Yellow
+Write-Host "`nBuilding Go Sidecar (lumina-net)..." -ForegroundColor Yellow
 $GoDir = Join-Path $Root "src-go"
 if (Test-Path $GoDir) {
     Push-Location $GoDir
@@ -38,7 +38,7 @@ if (Test-Path $GoDir) {
         go build -o $GoOut
         
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Go Sidecar built successfully: $GoOut" -ForegroundColor Green
+            Write-Host "Go Sidecar built successfully: $GoOut" -ForegroundColor Green
         } else {
             Write-Error "Go build failed with exit code $LASTEXITCODE"
         }
@@ -54,7 +54,7 @@ if (Test-Path $GoDir) {
 # ---------------------------------------------------------
 # 2. Build Kip Sidecar (kip-lang)
 # ---------------------------------------------------------
-Write-Host "`n🔨 Building Kip Sidecar (kip-lang)..." -ForegroundColor Yellow
+Write-Host "`nBuilding Kip Sidecar (kip-lang)..." -ForegroundColor Yellow
 $KipDir = Join-Path $Root "src-kip"
 if (Test-Path $KipDir) {
     Push-Location $KipDir
@@ -69,7 +69,7 @@ if (Test-Path $KipDir) {
             if (Test-Path $KipSrcPath) {
                 $KipDest = Join-Path $BinDir "kip-lang-$TargetTriple$Ext"
                 Copy-Item -Path $KipSrcPath -Destination $KipDest -Force
-                Write-Host "✅ Kip Sidecar built and moved to: $KipDest" -ForegroundColor Green
+                Write-Host "Kip Sidecar built and moved to: $KipDest" -ForegroundColor Green
             } else {
                 Write-Error "Could not find compiled binary at $KipSrcPath"
             }
@@ -88,7 +88,7 @@ if (Test-Path $KipDir) {
 # ---------------------------------------------------------
 # 3. Build Python Sidecar (lumina-sidekick)
 # ---------------------------------------------------------
-Write-Host "`n🔨 Building Python Sidecar (lumina-sidekick)..." -ForegroundColor Yellow
+Write-Host "`nBuilding Python Sidecar (lumina-sidekick)..." -ForegroundColor Yellow
 $SidekickDir = Join-Path $Root "src-sidekick"
 if (Test-Path $SidekickDir) {
     Push-Location $SidekickDir
@@ -103,33 +103,43 @@ if (Test-Path $SidekickDir) {
         Write-Host "Installing requirements..." -ForegroundColor Gray
         python -m pip install -r requirements.txt | Out-Null
         
-        # Determine output filename based on OS
-        $OutputName = "LuminaSidekick$Ext"
-        if ($Ext -eq "") { $OutputName = "LuminaSidekick.bin" }
-
-        # Build command using Nuitka
-        Write-Host "Running Nuitka build..." -ForegroundColor Gray
-        $NuitkaCmd = "python -m nuitka --assume-yes-for-downloads --onefile --standalone --enable-plugin=pyside6 --include-package=moviepy --include-package=proglog --include-package=tqdm --output-filename=$OutputName main.py"
+        # Build command using PyInstaller
+        Write-Host "Running PyInstaller build..." -ForegroundColor Gray
         
+        $Sep = ":"
+        if ($TargetTriple -match "windows") { $Sep = ";" }
+        
+        $PyArgs = @(
+            "--noconfirm",
+            "--onefile",
+            "--windowed",
+            "--name", "LuminaSidekick",
+            "--collect-all", "llama_cpp",
+            "--copy-metadata=imageio",
+            "--copy-metadata=moviepy",
+            "--hidden-import=moviepy",
+            "--hidden-import=proglog",
+            "--hidden-import=tqdm",
+            "--add-data", "main.py$($Sep)."
+        )
+
         if ($TargetTriple -match "windows") {
-            $NuitkaCmd += " --windows-console-mode=disable --windows-icon-from-ico=../src-tauri/icons/icon.ico"
+            $PyArgs += "--icon=../src-tauri/icons/icon.ico"
         }
 
-        Invoke-Expression $NuitkaCmd
+        $PyArgs += "main.py"
+
+        Write-Host "Executing: pyinstaller $PyArgs" -ForegroundColor DarkGray
+        & pyinstaller $PyArgs
         
-        if (Test-Path $OutputName) {
+        $DistPath = Join-Path "dist" "LuminaSidekick$Ext"
+        
+        if (Test-Path $DistPath) {
             $SidekickDest = Join-Path $BinDir "lumina-sidekick-$TargetTriple$Ext"
-            Copy-Item -Path $OutputName -Destination $SidekickDest -Force
-            Write-Host "✅ Python Sidecar built and moved to: $SidekickDest" -ForegroundColor Green
+            Copy-Item -Path $DistPath -Destination $SidekickDest -Force
+            Write-Host "Python Sidecar built and moved to: $SidekickDest" -ForegroundColor Green
         } else {
-            # Linux fallback check (sometimes Nuitka output name varies)
-            if ($Ext -eq "" -and (Test-Path "LuminaSidekick")) {
-                $SidekickDest = Join-Path $BinDir "lumina-sidekick-$TargetTriple$Ext"
-                Copy-Item -Path "LuminaSidekick" -Destination $SidekickDest -Force
-                 Write-Host "✅ Python Sidecar built (fallback) and moved to: $SidekickDest" -ForegroundColor Green
-            } else {
-                 Write-Error "LuminaSidekick binary was not created!"
-            }
+            Write-Error "LuminaSidekick binary was not created in dist/!"
         }
 
     } catch {
@@ -140,5 +150,3 @@ if (Test-Path $SidekickDir) {
 } else {
     Write-Warning "src-sidekick directory not found at $SidekickDir"
 }
-
-Write-Host "`n🎉 Sidecar build process completed." -ForegroundColor Cyan

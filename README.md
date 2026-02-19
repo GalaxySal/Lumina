@@ -1,6 +1,6 @@
 # Lumina Browser
 
-![Lumina Logo](lumina_logo.png)
+![Lumina Logo](lumina-logo.png)
 
 [![Rust](https://img.shields.io/badge/Rust-Core-orange?logo=rust)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-blue?logo=tauri)](https://tauri.app/)
@@ -102,6 +102,10 @@ cargo tauri build
 ```
 
 *Note: The build pipeline automatically handles cross-language compilation.*
+
+> **⚠️ TODO: Enable Updater Plugin**
+> 
+> The self-update feature (Tauri Updater) is currently disabled. To enable automatic updates in production, configure the updater plugin in `src-tauri/tauri.conf.json` and set up a signed release distribution endpoint. This is scheduled for implementation in v0.4.0.
 
 ## 📂 Project Structure
 

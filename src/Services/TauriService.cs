@@ -23,7 +23,7 @@ namespace tauri_browser.Services
         {
             try
             {
-                await _jsRuntime.InvokeVoidAsync("__TAURI__.core.invoke", command, args);
+                await _jsRuntime.InvokeVoidAsync("lumina.invoke", command, args);
             }
             catch (Exception ex)
             {

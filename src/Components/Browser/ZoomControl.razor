@@ -1,0 +1,94 @@
+@namespace tauri_browser.Components.Browser
+@inject tauri_browser.Services.TauriService Tauri
+
+<!-- Zoom Control -->
+<div class="zoom-control">
+    <button @onclick="ZoomOut" title="Zoom Out (Ctrl+-)">−</button>
+    <span class="zoom-level">@ZoomLevel%</span>
+    <button @onclick="ZoomIn" title="Zoom In (Ctrl+)">+</button>
+    <button @onclick="ResetZoom" title="Reset Zoom (Ctrl+0)">↻</button>
+</div>
+
+<style>
+.zoom-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--toolbar-bg);
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.zoom-control button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid #ccc;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    color: var(--text-color);
+    transition: background 0.2s, color 0.2s;
+}
+
+.zoom-control button:hover {
+    background: var(--btn-hover-bg);
+}
+
+.zoom-level {
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 35px;
+    text-align: center;
+    color: var(--text-color);
+}
+</style>
+
+@code {
+    [Parameter] public string TabLabel { get; set; } = "";
+    [Parameter] public EventCallback<int> OnZoomChanged { get; set; }
+    [Parameter] public IJSRuntime? JsRuntime { get; set; }
+
+    private int ZoomLevel { get; set; } = 100;
+
+    private async Task ZoomIn() {
+        if (ZoomLevel < 250) {
+            ZoomLevel += 10;
+            await UpdateZoom();
+        }
+    }
+
+    private async Task ZoomOut() {
+        if (ZoomLevel > 50) {
+            ZoomLevel -= 10;
+            await UpdateZoom();
+        }
+    }
+
+    private async Task ResetZoom() {
+        ZoomLevel = 100;
+        await UpdateZoom();
+    }
+
+    private async Task UpdateZoom() {
+        try {
+            // Apply zoom via JavaScript to the webview
+            if (JsRuntime != null) {
+                var factor = ZoomLevel / 100.0;
+                var js = $"document.documentElement.style.zoom = '{factor}';";
+                await JsRuntime.InvokeVoidAsync("eval", js);
+            }
+            
+            // Persist zoom level to database via Tauri
+            await OnZoomChanged.InvokeAsync(ZoomLevel);
+            StateHasChanged();
+        } catch (Exception ex) {
+            Console.WriteLine($"Zoom update failed: {ex}");
+        }
+    }
+}

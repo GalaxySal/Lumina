@@ -1,0 +1,55 @@
+@namespace tauri_browser.Components.Browser
+
+<!-- Incognito Toggle -->
+<button class="incognito-toggle @(IsIncognito ? "active" : "")" 
+        @onclick="Toggle"
+        title="@(IsIncognito ? "Exit Incognito Mode" : "Enter Incognito Mode")">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4.242 4.242a4 4 0 105.656 5.656l4.242-4.242a4 4 0 00-5.656-5.656l4.242 4.242" />
+    </svg>
+    <span>@(IsIncognito ? "Incognito" : "Standard")</span>
+</button>
+
+<style>
+.incognito-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-color);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.incognito-toggle:hover {
+    background: var(--btn-hover-bg);
+    border-color: #9c27b0;
+}
+
+.incognito-toggle.active {
+    background: #9c27b0;
+    border-color: #9c27b0;
+    color: white;
+}
+
+.incognito-toggle svg {
+    width: 16px;
+    height: 16px;
+}
+</style>
+
+@code {
+    [Parameter] public bool IsIncognito { get; set; } = false;
+    [Parameter] public EventCallback<bool> OnIncognitoChanged { get; set; }
+
+    private async Task Toggle() {
+        IsIncognito = !IsIncognito;
+        await OnIncognitoChanged.InvokeAsync(IsIncognito);
+        StateHasChanged();
+    }
+}

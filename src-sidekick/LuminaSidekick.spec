@@ -1,12 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import copy_metadata
+
+datas = [('main.py', '.')]
+binaries = []
+hiddenimports = ['moviepy', 'proglog', 'tqdm']
+datas += copy_metadata('imageio')
+datas += copy_metadata('moviepy')
+tmp_ret = collect_all('llama_cpp')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
-    datas=[('main.py', '.')],
-    hiddenimports=['moviepy', 'proglog', 'tqdm'],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -35,6 +45,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    uac_admin=True,
     icon=['..\\src-tauri\\icons\\icon.ico'],
 )

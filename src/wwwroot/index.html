@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Lumina Browser</title>
-    <base href="/" />
+    <base href="./" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <link rel="stylesheet" href="css/app.css" />
     
@@ -57,12 +57,31 @@
         </div>
     </div>
 
-    <script src="_framework/blazor.webassembly.js"></script>
     <script>
         /**
          * LUMINA SAFKAN BRIDGE
          * Connects Blazor WASM to Tauri Rust Backend
          */
+        
+        // Define Global Bridge Immediately
+        window.lumina = window.lumina || {};
+        
+        window.lumina.invoke = async (cmd, args) => {
+            if (window.__TAURI__ && window.__TAURI__.core) {
+                return await window.__TAURI__.core.invoke(cmd, args);
+            }
+            console.warn("Lumina: Tauri invoke not available for", cmd);
+        };
+
+        window.lumina.listen = async (event, dotNetHelper) => {
+            if (window.__TAURI__ && window.__TAURI__.event) {
+                return await window.__TAURI__.event.listen(event, (e) => {
+                    dotNetHelper.invokeMethodAsync('OnEvent', e.payload);
+                });
+            }
+            console.warn("Lumina: Tauri listen not available for", event);
+        };
+
         window.setupTabNavigationListener = async (dotNetRef) => {
             // 1. Global Keyboard Shortcuts
             window.addEventListener('keydown', (e) => {
@@ -103,18 +122,6 @@
                     await window.__TAURI__.event.listen(evt, handler);
                 }
 
-                // 3. Expose Direct Invoke Helper (if needed outside TauriService)
-                window.lumina = {
-                    invoke: async (cmd, args) => window.__TAURI__.core.invoke(cmd, args),
-                    listen: async (event, dotNetHelper) => {
-                        if (window.__TAURI__ && window.__TAURI__.event) {
-                            await window.__TAURI__.event.listen(event, (e) => {
-                                dotNetHelper.invokeMethodAsync('OnEvent', e.payload);
-                            });
-                        }
-                    }
-                };
-
             } else {
                 console.warn("Lumina: Tauri environment not detected. Running in browser mode.");
             }
@@ -129,8 +136,8 @@
             return el ? el.getBoundingClientRect().height : 0;
         };
     </script>
+    <script src="_framework/blazor.webassembly.js"></script>
     <script>
-        window.lumina = window.lumina || {};
         window.lumina.setTextScale = (scale) => {
             document.documentElement.style.setProperty('--text-scale', scale.replace('%', '') / 100);
         };

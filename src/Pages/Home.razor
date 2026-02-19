@@ -33,6 +33,11 @@
         <div id="webview-container">
             <!-- The native webview will be positioned here by Rust -->
         </div>
+        
+        <!-- Browser Feature Components -->
+        <ZoomControl @ref="ZoomControlComponent" OnZoomChanged="HandleZoomChanged" />
+        <FindBar @ref="FindBarComponent" />
+        <IncognitoToggle @ref="IncognitoToggleComponent" OnIncognitoChanged="HandleIncognitoChanged" />
     </div>
     
     <!-- Menu Overlay -->
@@ -239,6 +244,11 @@
 </div>
 
 @code {
+    // === Component References ===
+    private ZoomControl? ZoomControlComponent;
+    private FindBar? FindBarComponent;
+    private IncognitoToggle? IncognitoToggleComponent;
+
     private List<TabInfo> Tabs = new();
     private string ActiveTabId = string.Empty;
     private uint ActiveTabBlockedCount => Tabs.FirstOrDefault(t => t.Id == ActiveTabId)?.BlockedAdsCount ?? 0;
@@ -1074,5 +1084,44 @@
              NetworkStatus = "Error";
         }
         StateHasChanged();
+    }
+
+    // === Browser Feature Handlers ===
+
+    private async Task HandleZoomChanged(int newZoomLevel)
+    {
+        if (string.IsNullOrEmpty(ActiveTabId)) return;
+        
+        try
+        {
+            // Extract domain from current URL
+            var uri = new Uri(CurrentUrl);
+            var domain = uri.Host;
+            
+            // Persist zoom level to database
+            await Tauri.InvokeVoidAsync("set_zoom_level", new { 
+                domain = domain, 
+                zoom = newZoomLevel 
+            });
+            
+            Console.WriteLine($"Zoom level set to {newZoomLevel}% for domain {domain}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error setting zoom level: {ex.Message}");
+        }
+    }
+
+    private async Task HandleIncognitoChanged(bool isIncognito)
+    {
+        if (string.IsNullOrEmpty(ActiveTabId)) return;
+        
+        var tab = Tabs.FirstOrDefault(t => t.Id == ActiveTabId);
+        if (tab != null)
+        {
+            tab.IsIncognito = isIncognito;
+            StateHasChanged();
+            Console.WriteLine($"Incognito mode: {(isIncognito ? "enabled" : "disabled")} for tab {ActiveTabId}");
+        }
     }
 }

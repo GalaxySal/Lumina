@@ -27,9 +27,9 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg-color: transparent;
-    --glass-bg: rgba(27, 27, 30, 0.6);
-    --toolbar-bg: rgba(32, 33, 36, 0.65);
-    --menu-bg: rgba(41, 42, 45, 0.75);
+    --glass-bg: rgba(32, 33, 36, 0.6);
+    --toolbar-bg: rgba(32, 33, 36, 0.7);
+    --menu-bg: rgba(41, 42, 45, 0.85);
     --text-color: #E8EAED;
     --tab-inactive-bg: rgba(255, 255, 255, 0.05);
     --tab-active-bg: rgba(50, 54, 57, 0.8);

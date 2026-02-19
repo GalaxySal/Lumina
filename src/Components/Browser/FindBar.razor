@@ -1,0 +1,143 @@
+@namespace tauri_browser.Components.Browser
+@using tauri_browser.Models
+
+<!-- Find in Page Bar -->
+<div class="find-bar @(IsVisible ? "visible" : "hidden")">
+    <input type="text" 
+           class="find-input" 
+           placeholder="Find in page..." 
+           @bind="SearchQuery"
+           @onkeydown="HandleKeyDown"
+           @ref="InputRef" />
+    <div class="find-controls">
+        <button @onclick="FindNext" title="Find Next (Enter)">↓</button>
+        <button @onclick="FindPrevious" title="Find Previous (Shift+Enter)">↑</button>
+        <span class="find-counter">@MatchCount</span>
+        <button @onclick="Close" title="Close (Esc)">✕</button>
+    </div>
+</div>
+
+<style>
+.find-bar {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    gap: 8px;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.find-bar.hidden {
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+}
+
+.find-input {
+    width: 200px;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.find-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.find-controls button {
+    padding: 6px 8px;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    min-width: 32px;
+}
+
+.find-controls button:hover {
+    background: #e0e0e0;
+}
+
+.find-counter {
+    min-width: 40px;
+    text-align: center;
+    font-size: 12px;
+    color: #666;
+}
+
+@@media (prefers-color-scheme: dark) {
+    .find-bar {
+        background: #2d2d2d;
+        border-color: #444;
+        color: #e0e0e0;
+    }
+    .find-input {
+        background: #3d3d3d;
+        border-color: #555;
+        color: #e0e0e0;
+    }
+    .find-controls button {
+        background: #3d3d3d;
+        border-color: #555;
+        color: #e0e0e0;
+    }
+    .find-controls button:hover {
+        background: #4d4d4d;
+    }
+}
+</style>
+
+@code {
+    private bool IsVisible { get; set; } = false;
+    private string SearchQuery { get; set; } = "";
+    private int MatchCount { get; set; } = 0;
+    private ElementReference InputRef;
+    
+    [Parameter] public string TabLabel { get; set; } = "";
+    [Parameter] public IJSRuntime? JsRuntime { get; set; }
+
+    public void Show() => IsVisible = true;
+    public void Close() => IsVisible = false;
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") {
+            if (e.ShiftKey) await FindPrevious();
+            else await FindNext();
+        }
+        else if (e.Key == "Escape") Close();
+    }
+
+    private async Task FindNext() {
+        if (!string.IsNullOrEmpty(SearchQuery)) {
+            await ExecuteFind(SearchQuery, false);
+        }
+    }
+
+    private async Task FindPrevious() {
+        if (!string.IsNullOrEmpty(SearchQuery)) {
+            await ExecuteFind(SearchQuery, true);
+        }
+    }
+
+    private async Task ExecuteFind(string query, bool backwards) {
+        try {
+            var escapedQuery = query.Replace("'", "\\'");
+            var dir = backwards ? "true" : "false";
+            var js = $@"window.find('{escapedQuery}', false, {dir}, true);";
+            var result = await JsRuntime.InvokeAsync<dynamic>("eval", js);
+            MatchCount = result != null ? 1 : 0;
+        } catch (Exception ex) {
+            Console.WriteLine($"Find error: {ex.Message}");
+        }
+    }
+}
