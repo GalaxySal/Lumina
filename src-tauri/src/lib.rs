@@ -2022,7 +2022,7 @@ fn get_lumina_stealth_script() -> String {
             // Access denied to parent (cross-origin)
         }
         
-        console.log("Lumina Stealth Protocol: Activated on " + host);
+        // console.log("Lumina Stealth Protocol: Activated on " + host);
 
         // 0. Monkey-Patch IntersectionObserver to prevent ad script crashes
         const originalObserve = IntersectionObserver.prototype.observe;
@@ -2041,7 +2041,7 @@ fn get_lumina_stealth_script() -> String {
                  // Remove spaces (%20) from URL path which break AJAX calls
                  if (url.includes('%20') || url.includes(' ')) {
                      const cleanUrl = url.replace(/%20/g, '').replace(/\s/g, '');
-                     console.log("Lumina Fix: Corrected malformed URL", url, "->", cleanUrl);
+                     // console.log("Lumina Fix: Corrected malformed URL", url, "->", cleanUrl);
                      url = cleanUrl;
                  }
             }
@@ -2125,7 +2125,7 @@ fn get_lumina_stealth_script() -> String {
             if (!isFriendly) {
                 injectCSS(aggressiveAdStyles);
             } else {
-                console.log("Lumina Stealth: Friendly domain (" + host + ") - Skipping aggressive CSS.");
+                // console.log("Lumina Stealth: Friendly domain (" + host + ") - Skipping aggressive CSS.");
             }
         }
         
@@ -2158,7 +2158,7 @@ fn get_lumina_stealth_script() -> String {
                      const src = (el.src || '').toLowerCase();
                      const id = (el.id || '').toLowerCase();
                      if (src.includes('ads') || src.includes('doubleclick') || id.includes('google_ads') || src.includes('teads')) {
-                         console.log("Lumina Friendly-Kill: Removing ad iframe ->", el);
+                         // console.log("Lumina Friendly-Kill: Removing ad iframe ->", el);
                          el.remove();
                      }
                 });

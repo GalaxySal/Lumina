@@ -9,7 +9,7 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <link rel="stylesheet" href="css/app.css" />
     <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self' http://tauri.localhost http://ipc.localhost tauri:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' tauri: http://tauri.localhost; style-src 'self' 'unsafe-inline' http://tauri.localhost; connect-src 'self' http://ipc.localhost http://tauri.localhost https:; img-src 'self' data: https: asset: blob:; frame-src 'self' https: http:; font-src 'self' data:;">
+        content="default-src 'self' http://tauri.localhost http://ipc.localhost tauri:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' tauri: http://tauri.localhost https://*.google.com https://*.googletagmanager.com https://*.gstatic.com https://*.googleapis.com https://*.youtube.com; style-src 'self' 'unsafe-inline' http://tauri.localhost https://*.google.com https://*.gstatic.com https://*.googleapis.com; connect-src 'self' http://ipc.localhost http://tauri.localhost wss://*.localhost https:; img-src 'self' data: https: asset: blob: https://*.google.com https://*.googleusercontent.com https://*.gstatic.com https://*.youtube.com https://*.ytimg.com https://*.ggpht.com; frame-src 'self' https: http:; font-src 'self' data: https://*.gstatic.com;">
 
     <!-- Safkan: No external fonts/CDNs. Native look & feel. -->
     <style>
