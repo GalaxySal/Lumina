@@ -342,6 +342,7 @@ impl DownloadManager {
 }
 
 
+#[allow(dead_code)]
 struct SidekickState {
     tx: tokio::sync::mpsc::Sender<String>,
 }
@@ -349,7 +350,7 @@ struct SidekickState {
 #[tauri::command]
 async fn request_omnibox_suggestions(
     app: tauri::AppHandle,
-    state: tauri::State<'_, SidekickState>, 
+    _state: tauri::State<'_, SidekickState>, 
     app_data: tauri::State<'_, AppDataStore>,
     history_manager: tauri::State<'_, HistoryManager>,
     query: String
@@ -3315,6 +3316,7 @@ fn get_zoom_level(history_manager: tauri::State<'_, HistoryManager>, domain: Str
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn set_cookie(history_manager: tauri::State<'_, HistoryManager>, domain: String, name: String, value: String, expires: Option<i64>, path: Option<String>, secure: bool, http_only: bool) -> Result<(), String> {
     let p = path.unwrap_or_else(|| "/".to_string());
     let cookie = history_manager::CookieItem {
@@ -3513,7 +3515,7 @@ pub fn run() {
             }
 
             // Sidekick Channel
-            let (sidekick_tx, mut sidekick_rx) = tokio::sync::mpsc::channel::<String>(32);
+            let (sidekick_tx, _sidekick_rx) = tokio::sync::mpsc::channel::<String>(32);
             app.manage(SidekickState { tx: sidekick_tx });
 
             // Initialize Network Sidecar

@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection, Result};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -21,6 +21,7 @@ pub struct CookieItem {
     pub http_only: bool,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FormDataItem {
     pub field_name: String,
@@ -30,6 +31,7 @@ pub struct FormDataItem {
     pub use_count: i64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WebStorageItem {
     pub domain: String,
@@ -38,6 +40,7 @@ pub struct WebStorageItem {
     pub storage_type: String, // "localStorage" or "sessionStorage"
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ZoomLevel {
     pub domain: String,
@@ -51,9 +54,7 @@ pub struct HistoryManager {
 impl HistoryManager {
     pub fn new(app_data_dir: PathBuf) -> Self {
         let db_path = app_data_dir.join("history.db");
-        let manager = Self {
-            db_path,
-        };
+        let manager = Self { db_path };
         if let Err(e) = manager.init() {
             eprintln!("Failed to initialize history database: {}", e);
         }
@@ -76,7 +77,7 @@ impl HistoryManager {
             )",
             [],
         )?;
-        
+
         // Cookies table
         conn.execute(
             "CREATE TABLE IF NOT EXISTS cookies (
@@ -93,7 +94,7 @@ impl HistoryManager {
             )",
             [],
         )?;
-        
+
         // Form data table
         conn.execute(
             "CREATE TABLE IF NOT EXISTS form_data (
@@ -107,7 +108,7 @@ impl HistoryManager {
             )",
             [],
         )?;
-        
+
         // Web storage (localStorage/sessionStorage)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS web_storage (
@@ -121,7 +122,7 @@ impl HistoryManager {
             )",
             [],
         )?;
-        
+
         // Zoom levels per domain
         conn.execute(
             "CREATE TABLE IF NOT EXISTS zoom_levels (
@@ -131,14 +132,14 @@ impl HistoryManager {
             )",
             [],
         )?;
-        
+
         Ok(())
     }
 
     pub fn add_visit(&self, url: String, title: String) -> Result<()> {
         let conn = self.connect()?;
         let now = chrono::Utc::now().timestamp();
-        
+
         // Upsert logic
         // SQLite has ON CONFLICT DO UPDATE
         conn.execute(
@@ -159,9 +160,9 @@ impl HistoryManager {
             "SELECT url, title, visit_count, last_visit FROM history 
              WHERE url LIKE ?1 OR title LIKE ?1 
              ORDER BY visit_count DESC, last_visit DESC 
-             LIMIT 20"
+             LIMIT 20",
         )?;
-        
+
         let pattern = format!("%{}%", query);
         let rows = stmt.query_map(params![pattern], |row| {
             Ok(HistoryItem {
@@ -178,15 +179,15 @@ impl HistoryManager {
         }
         Ok(items)
     }
-    
+
     pub fn get_recent(&self, limit: i64) -> Result<Vec<HistoryItem>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
             "SELECT url, title, visit_count, last_visit FROM history 
              ORDER BY last_visit DESC 
-             LIMIT ?1"
+             LIMIT ?1",
         )?;
-        
+
         let rows = stmt.query_map(params![limit], |row| {
             Ok(HistoryItem {
                 url: row.get(0)?,
@@ -230,9 +231,9 @@ impl HistoryManager {
         let now = chrono::Utc::now().timestamp();
         let mut stmt = conn.prepare(
             "SELECT domain, name, value, expires, path, secure, http_only FROM cookies 
-             WHERE domain = ?1 AND (expires IS NULL OR expires > ?2)"
+             WHERE domain = ?1 AND (expires IS NULL OR expires > ?2)",
         )?;
-        
+
         let cookies = stmt.query_map(params![domain, now], |row| {
             Ok(CookieItem {
                 domain: row.get(0)?,
@@ -262,6 +263,7 @@ impl HistoryManager {
     }
 
     // ============= FORM DATA =============
+    #[allow(dead_code)]
     pub fn save_form_data(&self, item: FormDataItem) -> Result<()> {
         let conn = self.connect()?;
         let now = chrono::Utc::now().timestamp();
@@ -274,18 +276,17 @@ impl HistoryManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_form_suggestions(&self, field_name: &str, domain: &str) -> Result<Vec<String>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
             "SELECT DISTINCT field_value FROM form_data 
              WHERE field_name = ?1 AND domain = ?2
              ORDER BY use_count DESC, last_used DESC 
-             LIMIT 10"
+             LIMIT 10",
         )?;
-        
-        let values = stmt.query_map(params![field_name, domain], |row| {
-            row.get(0)
-        })?;
+
+        let values = stmt.query_map(params![field_name, domain], |row| row.get(0))?;
 
         let mut result = Vec::new();
         for val in values {
@@ -295,7 +296,14 @@ impl HistoryManager {
     }
 
     // ============= WEB STORAGE =============
-    pub fn set_web_storage(&self, domain: &str, key: &str, value: &str, storage_type: &str) -> Result<()> {
+    #[allow(dead_code)]
+    pub fn set_web_storage(
+        &self,
+        domain: &str,
+        key: &str,
+        value: &str,
+        storage_type: &str,
+    ) -> Result<()> {
         let conn = self.connect()?;
         let now = chrono::Utc::now().timestamp();
         conn.execute(
@@ -307,12 +315,17 @@ impl HistoryManager {
         Ok(())
     }
 
-    pub fn get_web_storage(&self, domain: &str, storage_type: &str) -> Result<Vec<(String, String)>> {
+    #[allow(dead_code)]
+    pub fn get_web_storage(
+        &self,
+        domain: &str,
+        storage_type: &str,
+    ) -> Result<Vec<(String, String)>> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
-            "SELECT key, value FROM web_storage WHERE domain = ?1 AND storage_type = ?2"
+            "SELECT key, value FROM web_storage WHERE domain = ?1 AND storage_type = ?2",
         )?;
-        
+
         let items = stmt.query_map(params![domain, storage_type], |row| {
             Ok((row.get(0)?, row.get(1)?))
         })?;
@@ -337,10 +350,8 @@ impl HistoryManager {
 
     pub fn get_zoom_level(&self, domain: &str) -> Result<i32> {
         let conn = self.connect()?;
-        let mut stmt = conn.prepare(
-            "SELECT zoom FROM zoom_levels WHERE domain = ?1"
-        )?;
-        
+        let mut stmt = conn.prepare("SELECT zoom FROM zoom_levels WHERE domain = ?1")?;
+
         let zoom = stmt.query_row(params![domain], |row| row.get(0));
         Ok(zoom.unwrap_or(100))
     }
