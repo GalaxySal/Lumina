@@ -15,16 +15,16 @@ pub fn init() {
 
 /// Configures a custom panic hook to prevent sensitive information leak
 fn setup_panic_hook() {
-    let default_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |info| {
+    let _default_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |_info| {
         #[cfg(not(debug_assertions))]
         {
             eprintln!("Lumina Critical Error: An unexpected error occurred.");
         }
-        
+
         #[cfg(debug_assertions)]
         {
-            default_hook(info);
+            _default_hook(_info);
         }
     }));
 }
@@ -54,9 +54,12 @@ unsafe fn check_memory_status() {
     if GlobalMemoryStatusEx(&mut mem_status).is_ok() {
         let total_mb = mem_status.ullTotalPhys / 1024 / 1024;
         let avail_mb = mem_status.ullAvailPhys / 1024 / 1024;
-        
+
         // Log memory status for diagnostics
-        println!("System Guardian: Memory Check - Available: {}MB / Total: {}MB", avail_mb, total_mb);
+        println!(
+            "System Guardian: Memory Check - Available: {}MB / Total: {}MB",
+            avail_mb, total_mb
+        );
 
         if avail_mb < 1024 {
             eprintln!("System Guardian Warning: Available memory is low (<1GB). Performance may be degraded.");

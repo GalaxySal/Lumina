@@ -1,52 +1,53 @@
 :root {
-  --bg-color: transparent; /* Enable window transparency */
-  --glass-bg: rgba(243, 244, 246, 0.6); /* Base glass tint */
-  --toolbar-bg: rgba(255, 255, 255, 0.65); /* More transparent for Zen feel */
-  --menu-bg: rgba(255, 255, 255, 0.75);
-  --text-color: #1f2937;
-  --accent-color: #3b82f6;
-  --accent-hover: #2563eb;
-  --border-color: rgba(229, 231, 235, 0.4);
-  --tab-active-bg: rgba(255, 255, 255, 0.8);
-  --tab-inactive-bg: rgba(229, 231, 235, 0.3);
-  --tab-hover-bg: rgba(255, 255, 255, 0.5);
-  --tab-text: #4b5563;
-  --tab-active-text: #111827;
-  --url-bg: rgba(255, 255, 255, 0.4);
-  --btn-hover-bg: rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  --radius: 12px; /* Softer corners */
-  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  --sidebar-width: 240px;
-  --url-bg-focus: rgba(255, 255, 255, 0.9);
-  --header-height: 104px;
-  --text-scale: 1;
+    --bg-color: #0f0f0f;
+    --glass-bg: #1e1e1e;
+    --toolbar-bg: #252525;
+    --menu-bg: #2d2d2d;
+    --text-color: #f1f3f4;
+    --accent-color: #05B8CC;
+    --accent-hover: #049fb0;
+    --border-color: #333333;
+    --tab-active-bg: #323639;
+    --tab-inactive-bg: #202124;
+    --tab-hover-bg: #3c4043;
+    --tab-text: #9AA0A6;
+    --tab-active-text: #F1F3F4;
+    --url-bg: #131314;
+    --btn-hover-bg: rgba(0, 0, 0, 0.05);
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --radius: 12px;
+    /* Softer corners */
+    --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --sidebar-width: 240px;
+    --url-bg-focus: rgba(255, 255, 255, 0.9);
+    --header-height: 104px;
+    --text-scale: 1;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg-color: transparent;
-    --glass-bg: rgba(32, 33, 36, 0.6);
-    --toolbar-bg: rgba(32, 33, 36, 0.7);
-    --menu-bg: rgba(41, 42, 45, 0.85);
-    --text-color: #E8EAED;
-    --tab-inactive-bg: rgba(255, 255, 255, 0.05);
-    --tab-active-bg: rgba(50, 54, 57, 0.8);
-    --tab-hover-bg: rgba(255, 255, 255, 0.1);
-    --tab-text: #9AA0A6;
-    --tab-active-text: #F1F3F4;
-    --url-bg: rgba(0, 0, 0, 0.2);
-    --url-bg-focus: rgba(60, 64, 67, 0.9);
-    --border-color: rgba(60, 64, 67, 0.4);
-    --btn-hover-bg: rgba(255, 255, 255, 0.1);
-  }
+    :root {
+        --bg-color: #0f0f0f;
+        --glass-bg: #1e1e1e;
+        --toolbar-bg: #252525;
+        --menu-bg: #2d2d2d;
+        --text-color: #E8EAED;
+        --tab-inactive-bg: #202124;
+        --tab-active-bg: #323639;
+        --tab-hover-bg: #3c4043;
+        --tab-text: #9AA0A6;
+        --tab-active-text: #F1F3F4;
+        --url-bg: #131314;
+        --url-bg-focus: #3c4043;
+        --border-color: #333333;
+        --btn-hover-bg: #3c4043;
+    }
 }
 
 body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background-color: transparent; /* Allow Tauri window effects */
+    background-color: var(--bg-color);
     color: var(--text-color);
     overflow: hidden;
     height: 100vh;
@@ -61,9 +62,7 @@ body {
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
-    background: var(--glass-bg); /* Main application background tint */
-    backdrop-filter: blur(20px); /* Strong blur for Zen look */
-    -webkit-backdrop-filter: blur(20px);
+    background: var(--bg-color);
 }
 
 .browser-container.vertical-mode {
@@ -85,7 +84,8 @@ body {
     padding: 8px 8px 0;
     gap: 6px;
     background: transparent;
-    height: 44px; /* Fixed height for tabs area */
+    height: 44px;
+    /* Fixed height for tabs area */
     z-index: 10;
     flex-shrink: 0;
 }
@@ -140,7 +140,8 @@ body {
     color: var(--tab-text);
     border: 1px solid transparent;
     border-bottom: none;
-    flex-shrink: 0; /* Prevent tabs from squishing infinitely */
+    flex-shrink: 0;
+    /* Prevent tabs from squishing infinitely */
 }
 
 .tab:hover {
@@ -150,7 +151,7 @@ body {
 .tab.active {
     background: var(--tab-active-bg);
     color: var(--tab-active-text);
-    box-shadow: 0 -1px 4px rgba(0,0,0,0.05);
+    box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.05);
     z-index: 2;
     font-weight: 500;
 }
@@ -219,16 +220,17 @@ body {
     border-bottom: 1px solid transparent;
 }
 
-.vertical-mode .tab.active { 
-    background: var(--tab-active-bg); 
-    height: 36px; 
-    box-shadow: none; 
+.vertical-mode .tab.active {
+    background: var(--tab-active-bg);
+    height: 36px;
+    box-shadow: none;
 }
-.vertical-mode .new-tab-btn { 
-    margin: 8px auto; 
-    border-radius: 6px; 
-    width: 100%; 
-    height: 36px; 
+
+.vertical-mode .new-tab-btn {
+    margin: 8px auto;
+    border-radius: 6px;
+    width: 100%;
+    height: 36px;
 }
 
 /* --- Toolbar (Address Bar) --- */
@@ -237,14 +239,13 @@ body {
     gap: 12px;
     padding: 10px 16px;
     background-color: var(--toolbar-bg);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
     align-items: center;
-    height: 60px; /* Increased height */
+    height: 60px;
+    /* Increased height */
     box-sizing: border-box;
     border-bottom: 1px solid var(--border-color);
     box-shadow: var(--shadow-sm);
-    z-index: 9;
+    z-index: 5;
     flex-shrink: 0;
 }
 
@@ -275,7 +276,8 @@ body {
     background-color: var(--url-bg);
     border-radius: 20px;
     padding: 0 16px;
-    height: 40px; /* Increased height */
+    height: 40px;
+    /* Increased height */
     border: 1px solid transparent;
     transition: var(--transition);
 }
@@ -394,7 +396,7 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.1);
+    background: rgba(0, 0, 0, 0.1);
     z-index: 99;
 }
 
@@ -403,8 +405,10 @@ body {
     top: var(--header-height);
     right: 0;
     bottom: 0;
-    width: 20rem; /* Responsive width */
-    background: var(--menu-bg); /* Use theme variable */
+    width: 20rem;
+    /* Responsive width */
+    background: var(--menu-bg);
+    /* Use theme variable */
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border-left: 1px solid var(--border-color);
@@ -416,8 +420,13 @@ body {
 }
 
 @keyframes slideIn {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
+    from {
+        transform: translateX(100%);
+    }
+
+    to {
+        transform: translateX(0);
+    }
 }
 
 .menu-header {
@@ -624,4 +633,3 @@ body {
 .tab.pinned .tab-icon {
     margin: 0;
 }
-

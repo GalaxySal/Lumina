@@ -28,8 +28,12 @@ namespace tauri_browser.Models
 
     public class HistoryItem 
     { 
+        [JsonPropertyName("url")]
         public string Url { get; set; } = string.Empty; 
+        [JsonPropertyName("title")]
         public string Title { get; set; } = string.Empty; 
+        [JsonPropertyName("timestamp")]
+        public long Timestamp { get; set; }
         [JsonPropertyName("visit_count")]
         public long VisitCount { get; set; }
         [JsonPropertyName("last_visit")]
@@ -38,7 +42,9 @@ namespace tauri_browser.Models
 
     public class FavoriteItem 
     { 
+        [JsonPropertyName("url")]
         public string Url { get; set; } = string.Empty; 
+        [JsonPropertyName("title")]
         public string Title { get; set; } = string.Empty; 
     }
 
@@ -93,7 +99,9 @@ namespace tauri_browser.Models
 
     public class TabCreatedPayload
     {
+        [JsonPropertyName("label")]
         public string Label { get; set; } = string.Empty;
+        [JsonPropertyName("url")]
         public string Url { get; set; } = string.Empty;
     }
 
@@ -120,14 +128,24 @@ namespace tauri_browser.Models
     
     public class AppSettings
     {
+        [JsonPropertyName("homepage")]
         public string Homepage { get; set; } = "https://www.google.com";
+        [JsonPropertyName("search_engine")]
         public string SearchEngine { get; set; } = "google";
+        [JsonPropertyName("theme")]
         public string Theme { get; set; } = "dark";
+        [JsonPropertyName("accent_color")]
         public string AccentColor { get; set; } = "#3b82f6";
+        [JsonPropertyName("vertical_tabs")]
         public bool VerticalTabs { get; set; } = false;
+        [JsonPropertyName("rounded_corners")]
         public bool RoundedCorners { get; set; } = true;
+        
+        [JsonPropertyName("enable_cookies")]
         public bool EnableCookies { get; set; } = true;
+        [JsonPropertyName("enable_form_data")]
         public bool EnableFormData { get; set; } = true;
+        [JsonPropertyName("cookie_expires_days")]
         public long CookieExpiresDays { get; set; } = 365;
     }
 }

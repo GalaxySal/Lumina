@@ -63,6 +63,7 @@ jobs:
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev build-essential curl wget libssl-dev file patchelf libxcb-cursor0 libxcb-xinerama0 cmake ninja-build
@@ -70,12 +71,14 @@ jobs:
 
       - name: Install dependencies (macOS only)
         if: matrix.platform == 'macos-latest'
+        shell: bash
         run: |
           brew install cmake ninja
           pip install wheel
 
       - name: Install dependencies (Windows only)
         if: matrix.platform == 'windows-latest'
+        shell: pwsh
         run: |
           pip install cmake ninja wheel
 

@@ -16,19 +16,12 @@
         "title": "Lumina Browser",
         "width": 800,
         "height": 600,
-        "transparent": true,
-        "windowEffects": {
-          "effects": [
-            "mica"
-          ],
-          "state": "active"
-        },
+        "transparent": false,
+        "devtools": false,
         "additionalBrowserArgs": "--ignore-certificate-errors"
       }
     ],
-    "security": {
-      "csp": "default-src 'self' lumina: lumina-app:; script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: lumina: lumina-app:; connect-src 'self' https: tauri: lumina: lumina-app:; frame-src https: lumina: lumina-app:;"
-    }
+    "security": {}
   },
   "bundle": {
     "active": true,

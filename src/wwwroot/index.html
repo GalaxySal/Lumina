@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -7,36 +8,37 @@
     <base href="./" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <link rel="stylesheet" href="css/app.css" />
-    
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' http://tauri.localhost http://ipc.localhost tauri:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' tauri: http://tauri.localhost; style-src 'self' 'unsafe-inline' http://tauri.localhost; connect-src 'self' http://ipc.localhost http://tauri.localhost https:; img-src 'self' data: https: asset: blob:; frame-src 'self' https: http:; font-src 'self' data:;">
+
     <!-- Safkan: No external fonts/CDNs. Native look & feel. -->
     <style>
         /* Modern Dark Loader */
-        body { margin: 0; background-color: #0f0f0f; overflow: hidden; }
-        #app { height: 100vh; width: 100vw; }
-        
-        .lumina-splash {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            background: #0f0f0f;
-            color: #fff;
-            font-family: 'Segoe UI', sans-serif;
-            user-select: none;
-            cursor: default;
+        body {
+            margin: 0;
+            background-color: #0f0f0f;
+            overflow: hidden;
         }
-        
+
+        #app {
+            height: 100vh;
+            width: 100vw;
+            position: relative;
+        }
+
+        /* The .lumina-splash style block has been removed as per instruction */
+
         .loader {
             width: 48px;
             height: 48px;
             border: 3px solid #333;
-            border-bottom-color: #05B8CC; /* Lumina Cyan */
+            border-bottom-color: #05B8CC;
+            /* Lumina Cyan */
             border-radius: 50%;
             animation: rotation 1s linear infinite;
             margin-bottom: 24px;
         }
-        
+
         .brand {
             font-weight: 600;
             letter-spacing: 2px;
@@ -45,16 +47,21 @@
             text-transform: uppercase;
         }
 
-        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
     </style>
 </head>
 
 <body>
     <div id="app">
-        <div class="lumina-splash">
-            <div class="loader"></div>
-            <div class="brand">Lumina OS</div>
-        </div>
+        <!-- Blazor will mount here -->
     </div>
 
     <script>
@@ -62,15 +69,22 @@
          * LUMINA SAFKAN BRIDGE
          * Connects Blazor WASM to Tauri Rust Backend
          */
-        
+
         // Define Global Bridge Immediately
         window.lumina = window.lumina || {};
-        
+
         window.lumina.invoke = async (cmd, args) => {
             if (window.__TAURI__ && window.__TAURI__.core) {
                 return await window.__TAURI__.core.invoke(cmd, args);
             }
+            // Fallback for dev
+            if (cmd === "get_settings") return { vertical_tabs: false };
             console.warn("Lumina: Tauri invoke not available for", cmd);
+        };
+
+        window.lumina.hideSplashScreen = () => {
+            // Function kept for compatibility with call in Home.razor, but effectively a no-op now
+            console.log("Lumina: Splash screen removed.");
         };
 
         window.lumina.listen = async (event, dotNetHelper) => {
@@ -102,16 +116,16 @@
             // 2. Tauri Event Listeners
             if (window.__TAURI__ && window.__TAURI__.event) {
                 const eventMap = {
-                    'tab-navigation':    (e) => dotNetRef.invokeMethodAsync('OnTabNavigation', e.payload.label, e.payload.url),
-                    'download-started':  (e) => dotNetRef.invokeMethodAsync('OnDownloadStarted', e.payload),
+                    'tab-navigation': (e) => dotNetRef.invokeMethodAsync('OnTabNavigation', e.payload.label, e.payload.url),
+                    'download-started': (e) => dotNetRef.invokeMethodAsync('OnDownloadStarted', e.payload),
                     'download-progress': (e) => dotNetRef.invokeMethodAsync('OnDownloadProgress', e.payload),
                     'download-finished': (e) => dotNetRef.invokeMethodAsync('OnDownloadFinished', e.payload),
-                    'tab-created':       (e) => dotNetRef.invokeMethodAsync('OnTabCreated', e.payload),
-                    'tab-updated':       (e) => dotNetRef.invokeMethodAsync('OnTabUpdated', e.payload),
-                    'request-new-tab':   (e) => dotNetRef.invokeMethodAsync('OnNewTabRequested', e.payload),
-                    'pwa-can-install':   (e) => dotNetRef.invokeMethodAsync('OnPwaDetected', e.payload.label),
+                    'tab-created': (e) => dotNetRef.invokeMethodAsync('OnTabCreated', e.payload),
+                    'tab-updated': (e) => dotNetRef.invokeMethodAsync('OnTabUpdated', e.payload),
+                    'request-new-tab': (e) => dotNetRef.invokeMethodAsync('OnNewTabRequested', e.payload),
+                    'pwa-can-install': (e) => dotNetRef.invokeMethodAsync('OnPwaDetected', e.payload.label),
                     'adblock-stats-update': (e) => dotNetRef.invokeMethodAsync('OnAdblockStatsUpdate', e.payload),
-                    'omnibox-results':      (e) => dotNetRef.invokeMethodAsync('OnOmniboxResults', e.payload),
+                    'omnibox-results': (e) => dotNetRef.invokeMethodAsync('OnOmniboxResults', e.payload),
                     'toggle-command-palette': () => {
                         if (window.commandPaletteRef) window.commandPaletteRef.invokeMethodAsync('Toggle');
                     }
@@ -128,7 +142,7 @@
         };
 
         window.registerCommandPaletteShortcut = (dotNetRef) => {
-             window.commandPaletteRef = dotNetRef;
+            window.commandPaletteRef = dotNetRef;
         };
 
         window.measureElementHeight = (selector) => {
@@ -143,4 +157,5 @@
         };
     </script>
 </body>
+
 </html>

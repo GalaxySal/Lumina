@@ -341,39 +341,6 @@ impl DownloadManager {
     }
 }
 
-async fn check_and_redirect(webview: tauri::Webview, url: String) {
-    if url.starts_with("tauri://") || url.starts_with("file://") || url.starts_with("about:") || url.starts_with("data:") || url.starts_with("lumina://") {
-        return;
-    }
-
-    // Simple check: try to fetch headers
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_default();
-
-    match client.get(&url).send().await {
-        Ok(_) => {
-            // Success or server error (404/500), browser handles it.
-            // We only care if we CANNOT reach the server.
-        }
-        Err(e) => {
-            // If it's a builder error, ignore. If it's a request error...
-            if e.is_connect() || e.is_timeout() || e.is_body() { // is_body means error reading body? No.
-               // is_connect covers DNS, Refused.
-               // is_timeout covers timeout.
-               println!("Connection failed for {}: {}", url, e);
-               
-               let err_msg = e.to_string();
-               let error_url = format!("tauri://localhost/error.html?url={}&err={}", 
-                   urlencoding::encode(&url), 
-                   urlencoding::encode(&err_msg));
-               
-               let _ = webview.eval(format!("window.location.replace('{}')", error_url));
-            }
-        }
-    }
-}
 
 struct SidekickState {
     tx: tokio::sync::mpsc::Sender<String>,
@@ -381,6 +348,7 @@ struct SidekickState {
 
 #[tauri::command]
 async fn request_omnibox_suggestions(
+    app: tauri::AppHandle,
     state: tauri::State<'_, SidekickState>, 
     app_data: tauri::State<'_, AppDataStore>,
     history_manager: tauri::State<'_, HistoryManager>,
@@ -399,17 +367,37 @@ async fn request_omnibox_suggestions(
         history_manager.search(&query).unwrap_or_default()
     };
 
-    // 3. Construct Payload
-    let payload = serde_json::json!({
-        "type": "omnibox_query",
-        "query": query,
-        "context": {
-            "favorites": favorites,
-            "history": history_items
+    // 3. Construct Suggestions
+    let mut suggestions = Vec::new();
+
+    // Add favorites that match query
+    for fav in favorites {
+        if query.is_empty() || fav.title.to_lowercase().contains(&query.to_lowercase()) || fav.url.to_lowercase().contains(&query.to_lowercase()) {
+            suggestions.push(serde_json::json!({
+                "title": fav.title,
+                "url": fav.url,
+                "icon": "globe"
+            }));
         }
-    }).to_string();
+    }
+
+    // Add history items
+    for item in history_items {
+        suggestions.push(serde_json::json!({
+            "title": item.title,
+            "url": item.url,
+            "icon": "history"
+        }));
+    }
+
+    // 4. Emit Results directly to frontend
+    let response = serde_json::json!({
+        "suggestions": suggestions
+    });
     
-    state.tx.send(payload).await.map_err(|e| e.to_string())?;
+    use tauri::Emitter;
+    let _ = app.emit("omnibox-results", response.to_string());
+    
     Ok(())
 }
 
@@ -454,12 +442,6 @@ async fn navigate(app: AppHandle, label: String, url: String) {
         // Use eval for navigation
         let _ = webview.eval(format!("window.location.assign('{}')", target_url).as_str());
         
-        // Check connection
-        let wv = webview.clone();
-        let u = target_url.clone();
-        tauri::async_runtime::spawn(async move {
-            check_and_redirect(wv, u).await;
-        });
     } else {
         println!("Rust: webview {} not found via AppHandle lookup (gave up after retries)", label);
     }
@@ -1377,24 +1359,54 @@ fn calculate_layout(logical_size: tauri::LogicalSize<f64>, vertical_tabs: bool, 
 
 #[tauri::command]
 fn update_layout(state: tauri::State<'_, UiState>, app: AppHandle, data_store: tauri::State<'_, AppDataStore>) -> Result<(), String> {
+    println!("Rust: update_layout called");
     let menu_open = state.sidebar_open.load(std::sync::atomic::Ordering::Relaxed);
     let suggestions_height = state.suggestions_height.load(std::sync::atomic::Ordering::Relaxed) as f64;
-    let vertical_tabs = data_store.data.lock().unwrap().settings.vertical_tabs;
-    let main_window = app.get_window("main").ok_or("Main window not found")?;
-    let window_size = main_window.inner_size().map_err(|e| e.to_string())?;
-    let scale_factor = main_window.scale_factor().map_err(|e| e.to_string())?;
+    
+    let settings = data_store.data.lock().map_err(|e| e.to_string())?;
+    let vertical_tabs = settings.settings.vertical_tabs;
+    drop(settings);
+
+    let main_window = app.get_webview_window("main").ok_or_else(|| {
+        eprintln!("Rust Critical: Main window not found in update_layout");
+        "Main window not found".to_string()
+    })?;
+    
+    let window_size = main_window.inner_size().map_err(|e| {
+        let err = e.to_string();
+        eprintln!("Rust Error: Failed to get window size: {}", err);
+        err
+    })?;
+    
+    let scale_factor = main_window.scale_factor().map_err(|e| {
+        let err = e.to_string();
+        eprintln!("Rust Error: Failed to get scale factor: {}", err);
+        err
+    })?;
+    
     let logical_size = window_size.to_logical::<f64>(scale_factor);
+    println!("Rust: Layout calculation - Size: {:?}, Vertical: {}, Menu: {}", logical_size, vertical_tabs, menu_open);
     
     let (main_height, x, y, width, height) = calculate_layout(logical_size, vertical_tabs, menu_open, suggestions_height);
-    
+    println!("Rust: Layout results - MainH: {}, x: {}, y: {}, w: {}, h: {}", main_height, x, y, width, height);
+
     if let Some(main_webview) = app.get_webview("main") {
-        main_webview.set_size(tauri::LogicalSize::new(logical_size.width, main_height)).map_err(|e| e.to_string())?;
-        if menu_open { let _ = main_webview.set_focus(); }
+        let _ = main_webview.set_auto_resize(false);
+        let _ = main_webview.set_position(tauri::LogicalPosition::new(0.0, 0.0));
+        main_webview.set_size(tauri::LogicalSize::new(logical_size.width, main_height)).map_err(|e| {
+            let err = e.to_string();
+            eprintln!("Rust Error: Failed to set main webview size: {}", err);
+            err
+        })?;
+        if menu_open { let _ = main_window.set_focus(); }
+    } else {
+        eprintln!("Rust Critical: Main webview not found in update_layout");
     }
     let webviews = app.webviews();
     for webview in webviews {
         let webview_instance = &webview.1;
         if webview_instance.label() != "main" {
+            let _ = webview_instance.set_auto_resize(false);
             let _ = webview_instance.set_position(tauri::LogicalPosition::new(x, y));
             let _ = webview_instance.set_size(tauri::LogicalSize::new(width, height));
         }
@@ -2854,21 +2866,6 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
 
                     let _ = webview.show();
                     let _ = webview.set_focus();
-
-                    #[cfg(target_os = "windows")]
-                    {
-                        use windows::Win32::Foundation::HWND;
-                        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOP, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW};
-                        
-                        // Force Z-Order to Top
-                        if let Ok(hwnd_isize) = webview.window().hwnd() {
-                             // Tauri v2 returns HWND as isize on Windows
-                             let hwnd = HWND(hwnd_isize.0 as isize);
-                             unsafe {
-                                 let _ = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-                             }
-                        }
-                    }
                     
                     // Explicitly ensure navigation (fix for WebView2 Source being null)
                     // This forces the webview to navigate even if the builder initialization missed it
@@ -2879,22 +2876,19 @@ async fn create_tab(state: tauri::State<'_, UiState>, app: AppHandle, data_store
                         println!("Rust: Failed to force load url via eval: {}", e);
                     }
 
-                    // Force resize to ensure visibility (Fix for black screen / 0x0 size)
-                    let _ = webview.set_size(tauri::LogicalSize::new(tab_width, tab_height));
-                    // Force position to ensure it doesn't overlap with the top bar (Fix for production layout issue)
-                    let _ = webview.set_position(tauri::LogicalPosition::new(x, y));
+                     // Force tracking settings
+                     let _ = webview.set_auto_resize(false);
+                     
+                     // Force resize to ensure visibility (Fix for black screen / 0x0 size)
+                     let _ = webview.set_size(tauri::LogicalSize::new(tab_width, tab_height));
+                     // Force position to ensure it doesn't overlap with the top bar (Fix for production layout issue)
+                     let _ = webview.set_position(tauri::LogicalPosition::new(x, y));
 
                     let _ = app.emit::<TabCreatedPayload>("tab-created", TabCreatedPayload {
                         label: label.clone(),
                         url: url.clone(),
                     });
 
-                    // Initial check
-                    let wv = webview.clone();
-                    let u = url.clone();
-                    tauri::async_runtime::spawn(async move {
-                        check_and_redirect(wv, u).await;
-                    });
                 },
                 Err(e) => {
                     println!("Rust: Error creating tab {}: {:?}", label, e);
@@ -2939,20 +2933,6 @@ fn switch_tab(app: AppHandle, state: tauri::State<'_, UiState>, label: String) {
     if let Some(webview) = app.get_webview(&label) {
         let _ = webview.show();
         let _ = webview.set_focus();
-
-        #[cfg(target_os = "windows")]
-        {
-            use windows::Win32::Foundation::HWND;
-            use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOP, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW};
-            
-            // Force Z-Order to Top
-             if let Ok(hwnd_isize) = webview.window().hwnd() {
-                     let hwnd = HWND(hwnd_isize.0 as isize);
-                     unsafe {
-                         let _ = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-                     }
-             }
-        }
     }
     
     // Update state
@@ -3505,6 +3485,7 @@ pub fn run() {
         })
         .manage(PwaState { icons: std::sync::Mutex::new(std::collections::HashMap::new()) })
         .setup(|app| {
+            println!("Lumina: Setup started...");
             // Initialize Lua (Real Runtime)
             app.manage(LuaState { lua: Mutex::new(create_lua_runtime()) });
 
@@ -3531,105 +3512,9 @@ pub fn run() {
                 }
             }
 
-            // Initialize Sidekick Communication Channel
+            // Sidekick Channel
             let (sidekick_tx, mut sidekick_rx) = tokio::sync::mpsc::channel::<String>(32);
             app.manage(SidekickState { tx: sidekick_tx });
-
-            // Start Lumina Sidekick (GUI) with output capture for "The Bridge"
-            let sidekick_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                use tauri_plugin_shell::ShellExt;
-                use tauri_plugin_shell::process::CommandEvent;
-                
-                loop {
-                    println!("Starting Lumina Sidekick...");
-                    let sidecar = match sidekick_handle.shell().sidecar("lumina-sidekick") {
-                        Ok(s) => s,
-                        Err(e) => {
-                            eprintln!("Failed to create Sidekick sidecar command: {}", e);
-                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                            continue;
-                        }
-                    };
-
-                    let (mut rx, mut child) = match sidecar.spawn() {
-                        Ok(v) => v,
-                        Err(e) => {
-                            eprintln!("Failed to spawn Sidekick process: {}", e);
-                            if e.to_string().contains("740") {
-                                eprintln!("CRITICAL: Sidekick requires elevation (Admin rights). Stopping retry loop.");
-                                break;
-                            }
-                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                            continue;
-                        }
-                    };
-
-                    println!("Lumina Sidekick started successfully.");
-
-                    loop {
-                        tokio::select! {
-                            msg_opt = sidekick_rx.recv() => {
-                                match msg_opt {
-                                    Some(msg) => {
-                                        let input = format!("{}\n", msg);
-                                        if let Err(e) = child.write(input.as_bytes()) {
-                                            eprintln!("Failed to write to Sidekick: {}", e);
-                                            break; 
-                                        }
-                                    }
-                                    None => {
-                                        println!("Sidekick input channel closed. Stopping Sidekick.");
-                                        return; 
-                                    }
-                                }
-                            }
-                            event_opt = rx.recv() => {
-                                match event_opt {
-                                    Some(event) => {
-                                        match event {
-                                            CommandEvent::Stdout(line_bytes) => {
-                                                let line = String::from_utf8_lossy(&line_bytes);
-                                                if line.starts_with("LUA:") {
-                                                    let script = line.trim_start_matches("LUA:").trim().to_string();
-                                                    println!("Bridge: Executing Lua from Sidekick: {}", script);
-                                                    
-                                                    if let Some(state) = sidekick_handle.try_state::<LuaState>() {
-                                                        if let Ok(lua) = state.lua.lock() {
-                                                            match lua.load(&script).eval::<String>() {
-                                                                Ok(res) => {
-                                                                    let _ = sidekick_handle.emit("lua-bridge-message", res);
-                                                                }
-                                                                Err(e) => {
-                                                                    eprintln!("Lua Bridge Error: {}", e);
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                } else if line.starts_with("OMNIBOX_RESULTS:") {
-                                                    let json_str = line.trim_start_matches("OMNIBOX_RESULTS:").trim();
-                                                    let _ = sidekick_handle.emit("omnibox-results", json_str);
-                                                }
-                                            }
-                                            CommandEvent::Stderr(line_bytes) => {
-                                                let line = String::from_utf8_lossy(&line_bytes);
-                                                eprintln!("Sidekick Stderr: {}", line);
-                                            }
-                                            CommandEvent::Terminated(t) => {
-                                                println!("Sidekick terminated: {:?}", t);
-                                                break; 
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                    None => break, 
-                                }
-                            }
-                        }
-                    }
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
-            });
 
             // Initialize Network Sidecar
             let (tx, mut rx) = tokio::sync::mpsc::channel::<NetworkSidecarRequest>(32);
@@ -3814,9 +3699,19 @@ pub fn run() {
                  }
             }
 
-            let app_dir = app.path().app_data_dir().unwrap();
+            let app_dir = match app.path().app_data_dir() {
+                Ok(dir) => dir,
+                Err(e) => {
+                    eprintln!("Lumina Critical Error: Failed to get app data dir: {}", e);
+                    return Err(e.into());
+                }
+            };
+
             if !app_dir.exists() {
-                let _ = std::fs::create_dir_all(&app_dir);
+                if let Err(e) = std::fs::create_dir_all(&app_dir) {
+                    eprintln!("Lumina Critical Error: Failed to create app data dir: {}", e);
+                    return Err(e.into());
+                }
             }
             app.manage(AppDataStore::new(app_dir.clone()));
             app.manage(DownloadManager::new(app_dir.clone()));
@@ -3827,10 +3722,16 @@ pub fn run() {
             let show_i = tauri::menu::MenuItem::with_id(app, "show", "Göster", true, None::<&str>)?;
             let menu = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i])?;
 
-            let _tray = tauri::tray::TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+            let icon = app.default_window_icon().cloned();
+            let mut tray_builder = tauri::tray::TrayIconBuilder::new()
                 .tooltip("Lumina Browser")
-                .menu(&menu)
+                .menu(&menu);
+            
+            if let Some(i) = icon {
+                tray_builder = tray_builder.icon(i);
+            }
+
+            let _tray = tray_builder
                 .on_menu_event(|app: &AppHandle, event| {
                     match event.id().as_ref() {
                         "quit" => app.exit(0),
@@ -3850,7 +3751,7 @@ pub fn run() {
                              let _ = window.show();
                              let _ = window.set_focus();
                          }
-                     }
+                    }
                 })
                 .build(app)?;
 
@@ -3859,6 +3760,31 @@ pub fn run() {
                 println!("Debug event received: {:?}", event);
             });
 
+            // Initial layout setup for production visibility
+            if let Some(main_webview) = app.get_webview("main") {
+                let _ = main_webview.set_auto_resize(false);
+                
+                // Force initial layout calculation to set correct UI height (104px)
+                // This prevents the main webview from staying full-screen on startup
+                let handle = app.handle().clone();
+                
+                tauri::async_runtime::spawn(async move {
+                    use tauri::Manager;
+                    // Increased delay to ensure production window is fully initialized
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    
+                    if let Some(window) = handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+
+                    let state = handle.state::<UiState>();
+                    let store = handle.state::<AppDataStore>();
+                    let _ = update_layout(state, handle.clone(), store);
+                });
+            }
+
+            println!("Lumina: Setup completed successfully.");
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -3873,28 +3799,36 @@ pub fn run() {
                          let scale_factor = window.scale_factor().unwrap_or(1.0);
                          let logical_size = size.to_logical::<f64>(scale_factor);
                          
-                         let state = window.app_handle().state::<UiState>();
-                         let sidebar_open = state.sidebar_open.load(std::sync::atomic::Ordering::Relaxed);
-                         let suggestions_height = state.suggestions_height.load(std::sync::atomic::Ordering::Relaxed) as f64;
+                         let app_handle = window.app_handle();
+                         let ui_state = app_handle.state::<UiState>();
+                         let sidebar_open = ui_state.sidebar_open.load(std::sync::atomic::Ordering::Relaxed);
+                         let suggestions_height = ui_state.suggestions_height.load(std::sync::atomic::Ordering::Relaxed) as f64;
                          
-                         let data_store = window.app_handle().state::<AppDataStore>();
-                         let vertical_tabs = data_store.data.lock().unwrap().settings.vertical_tabs;
+                         let data_store = app_handle.state::<AppDataStore>();
+                         let vertical_tabs = if let Ok(data) = data_store.data.lock() {
+                             data.settings.vertical_tabs
+                         } else {
+                             false
+                         };
 
                          let (main_height, x, y, width, height) = calculate_layout(logical_size, vertical_tabs, sidebar_open, suggestions_height);
-                         
+                         // println!("Rust: Window Resized - MainH: {}, w: {}, h: {}", main_height, width, height);
+
                          // Resize main webview (UI)
-                         if let Some(main_webview) = window.app_handle().get_webview("main") {
+                         if let Some(main_webview) = app_handle.get_webview("main") {
+                             let _ = main_webview.set_auto_resize(false);
+                             let _ = main_webview.set_position(tauri::LogicalPosition::new(0.0, 0.0));
                              let _ = main_webview.set_size(tauri::LogicalSize::new(logical_size.width, main_height));
                          }
     
                          // Resize ALL other webviews (browser tabs)
-                         let webviews = window.app_handle().webviews();
-                         
+                         let webviews = app_handle.webviews();
                          for webview in webviews {
-                             let webview_instance = &webview.1;
+                             let webview_instance = &webview.1; 
                              if webview_instance.label() != "main" {
-                                 let _ = webview_instance.set_position(tauri::LogicalPosition::new(x, y));
+                                 let _ = webview_instance.set_auto_resize(false);
                                  let _ = webview_instance.set_size(tauri::LogicalSize::new(width, height));
+                                 let _ = webview_instance.set_position(tauri::LogicalPosition::new(x, y));
                              }
                          }
                     }
