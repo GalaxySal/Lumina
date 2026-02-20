@@ -14,32 +14,31 @@
 .incognito-toggle {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border: 1px solid var(--border-color);
+    gap: 4px;
+    padding: 0 4px;
+    border: none;
     background: transparent;
-    color: var(--text-color);
-    border-radius: 6px;
+    color: var(--tab-text);
+    border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     transition: all 0.2s;
+    height: 20px;
 }
 
 .incognito-toggle:hover {
     background: var(--btn-hover-bg);
-    border-color: #9c27b0;
+    color: var(--text-color);
 }
 
 .incognito-toggle.active {
-    background: #9c27b0;
-    border-color: #9c27b0;
-    color: white;
+    color: #ce93d8; /* A lighter purple suited for dark themes */
 }
 
 .incognito-toggle svg {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
 }
 </style>
 

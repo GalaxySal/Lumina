@@ -13,18 +13,17 @@
 .zoom-control {
     display: flex;
     align-items: center;
-    gap: 6px;
-    background: var(--toolbar-bg);
-    padding: 4px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border-color);
+    gap: 2px;
+    background: transparent;
+    padding: 0;
+    border: none;
 }
 
 .zoom-control button {
-    width: 28px;
-    height: 28px;
+    width: 20px;
+    height: 20px;
     padding: 0;
-    border: 1px solid #ccc;
+    border: none;
     background: transparent;
     cursor: pointer;
     border-radius: 4px;
@@ -32,20 +31,22 @@
     align-items: center;
     justify-content: center;
     font-weight: bold;
-    color: var(--text-color);
+    color: var(--tab-text);
     transition: background 0.2s, color 0.2s;
+    font-size: 12px;
 }
 
 .zoom-control button:hover {
     background: var(--btn-hover-bg);
+    color: var(--text-color);
 }
 
 .zoom-level {
-    font-size: 12px;
-    font-weight: 600;
-    min-width: 35px;
+    font-size: 11px;
+    font-weight: 500;
+    min-width: 30px;
     text-align: center;
-    color: var(--text-color);
+    color: var(--tab-text);
 }
 </style>
 

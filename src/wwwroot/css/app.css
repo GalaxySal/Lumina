@@ -525,6 +525,18 @@ body {
     background-color: var(--bg-color);
 }
 
+/* --- Status Bar --- */
+.status-bar {
+    display: flex;
+    align-items: center;
+    height: 24px;
+    background: var(--toolbar-bg);
+    border-top: 1px solid var(--border-color);
+    padding: 0 8px;
+    flex-shrink: 0;
+    z-index: 10;
+}
+
 /* --- Settings Panel --- */
 .settings-panel {
     padding: 16px;

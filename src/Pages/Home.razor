@@ -38,9 +38,13 @@
         </div>
         
         <!-- Browser Feature Components -->
-        <ZoomControl @ref="ZoomControlComponent" OnZoomChanged="HandleZoomChanged" />
+        <div class="status-bar">
+            <IncognitoToggle @ref="IncognitoToggleComponent" OnIncognitoChanged="HandleIncognitoChanged" />
+            <div style="flex-grow: 1;"></div>
+            <ZoomControl @ref="ZoomControlComponent" OnZoomChanged="HandleZoomChanged" />
+        </div>
+        
         <FindBar @ref="FindBarComponent" />
-        <IncognitoToggle @ref="IncognitoToggleComponent" OnIncognitoChanged="HandleIncognitoChanged" />
     </div>
     
     <!-- Menu Overlay -->
