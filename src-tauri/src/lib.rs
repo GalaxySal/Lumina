@@ -37,7 +37,7 @@ fn create_lua_runtime() -> Lua {
     let _ = lua.load("
         -- Custom Lumina API
         lumina = {
-            version = '0.3.6',
+            version = '0.3.7',
             platform = 'windows'
         }
     ").exec();
@@ -3341,10 +3341,86 @@ fn delete_cookie(history_manager: tauri::State<'_, HistoryManager>, domain: Stri
     history_manager.delete_cookie(&domain, &name).map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "linux")]
+fn nvidia_driver_present() -> bool {
+    std::path::Path::new("/sys/module/nvidia").exists()
+}
+
+#[cfg(target_os = "linux")]
+fn linux_session_is_wayland() -> bool {
+    if std::env::var("WAYLAND_DISPLAY")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    std::env::var("XDG_SESSION_TYPE")
+        .map(|v| v == "wayland")
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_session_is_x11() -> bool {
+    std::env::var("XDG_SESSION_TYPE")
+        .map(|v| v == "x11")
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn is_hyprland_compositor() -> bool {
+    std::env::var("HYPRLAND_INSTANCE_SIGNATURE")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+        || std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|v| v.to_lowercase().contains("hyprland"))
+            .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn configure_linux_gpu_workarounds() {
+    if !nvidia_driver_present() {
+        return;
+    }
+
+    let is_wayland = linux_session_is_wayland();
+    let is_x11 = linux_session_is_x11();
+    let hyprland = is_hyprland_compositor();
+
+    let needs_dmabuf_disable = is_x11 || (is_wayland && hyprland);
+    let needs_explicit_sync_disable = is_wayland && !hyprland;
+
+    if needs_dmabuf_disable
+        && std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err()
+    {
+        eprintln!(
+            "[Lumina GPU] NVIDIA proprietary driver detected; session={:?} wayland={} hyprland={}: disabling WebKit DMA-BUF renderer (gbm_bo_map fails on the proprietary driver, or the Wayland syncobj surface is rejected). Hardware-accelerated compositing falls back to shared-memory. Set WEBKIT_DISABLE_DMABUF_RENDERER=0 to override.",
+            std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),
+            is_wayland,
+            hyprland
+        );
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
+    if needs_explicit_sync_disable
+        && std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_err()
+    {
+        eprintln!(
+            "[Lumina GPU] NVIDIA proprietary driver detected on Wayland (non-Hyprland): disabling NVIDIA explicit sync to clear the 'Error 71 (Protocol error)' crash while keeping the DMA-BUF hardware path alive. Set __NV_DISABLE_EXPLICIT_SYNC=0 to override."
+        );
+        std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+    }
+
+    if !needs_dmabuf_disable && !needs_explicit_sync_disable {
+        eprintln!(
+            "[Lumina GPU] NVIDIA proprietary driver detected but no workaround is required for this session."
+        );
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
-    std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    configure_linux_gpu_workarounds();
 
     let builder = tauri::Builder::default();
 
