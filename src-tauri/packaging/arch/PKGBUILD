@@ -1,0 +1,79 @@
+# Maintainer: Lumina Browser <nazim@lumina.local>
+# Arch Linux package for Lumina Browser.
+#
+# Self-contained package: ships the WebKit2GTK/EGL stack bundled together with
+# the three Tauri sidecars (kip-lang, lumina-net, lumina-sidekick) so the app
+# runs reliably on Arch without host-driver library mismatches. The NVIDIA
+# DMA-BUF workaround lives in src-tauri/src/lib.rs (configure_linux_gpu_workarounds)
+# and is compiled into the shipped binary.
+#
+# Build:    makepkg -f
+# Install:  sudo pacman -U lumina-browser-*.pkg.tar.zst
+
+pkgname=lumina-browser
+pkgver=0.3.7
+pkgrel=1
+pkgdesc="A next-generation browser built with Tauri and Blazor (GPU-workaround aware)"
+arch=('x86_64')
+url="https://github.com/GalaxySal/Lumina"
+license=('MIT')
+depends=('glibc')
+optdepends=(
+  'xdg-desktop-portal: file upload / screenshot dialogs'
+  'libayatana-appindicator3: system tray icon'
+)
+provides=('lumina-browser')
+conflicts=('lumina-browser')
+
+source=("lumina-browser-$pkgver.tar.gz::https://github.com/GalaxySal/Lumina/releases/download/v$pkgver/lumina-browser-$pkgver.tar.gz")
+sha256sums=('2137eff02beb53af92e09413da29605ea2ac580d284a512ada5d9c0b06834233')
+
+package() {
+  local _optdir="$pkgdir/opt/lumina-browser"
+
+  # Install the self-contained application (binary + sidecars + bundled libs)
+  mkdir -p "$_optdir"
+  cp -a "$srcdir/Lumina.AppDir/." "$_optdir/"
+
+  # Ensure every binary is executable
+  chmod +x "$_optdir/usr/bin/lumina-browser" \
+           "$_optdir/usr/bin/kip-lang" \
+           "$_optdir/usr/bin/lumina-net" \
+           "$_optdir/usr/bin/lumina-sidekick"
+
+  # Wrapper on PATH: runs the app with its bundled library search path
+  mkdir -p "$pkgdir/usr/bin"
+  cat > "$pkgdir/usr/bin/lumina-browser" <<'WRAPPER'
+#!/bin/sh
+_appdir="/opt/lumina-browser"
+if [ -n "$LD_LIBRARY_PATH" ]; then
+  LD_LIBRARY_PATH="$_appdir/usr/lib:$_appdir/usr/lib64:$LD_LIBRARY_PATH"
+else
+  LD_LIBRARY_PATH="$_appdir/usr/lib:$_appdir/usr/lib64"
+fi
+export LD_LIBRARY_PATH
+exec "$_appdir/usr/bin/lumina-browser" "$@"
+WRAPPER
+  chmod +x "$pkgdir/usr/bin/lumina-browser"
+
+  # Desktop entry
+  mkdir -p "$pkgdir/usr/share/applications"
+  sed -e 's|^Icon=.*|Icon=lumina-browser|' \
+      -e 's|^Name=.*|Name=Lumina|' \
+      "$_optdir/usr/share/applications/Lumina.desktop" \
+    > "$pkgdir/usr/share/applications/lumina-browser.desktop"
+
+  # Icons
+  mkdir -p "$pkgdir/usr/share/pixmaps"
+  cp "$_optdir/usr/share/icons/hicolor/128x128/apps/lumina-browser.png" \
+     "$pkgdir/usr/share/pixmaps/lumina-browser.png"
+  for s in 32x32 128x128 256x256 512x512; do
+    _dst="$pkgdir/usr/share/icons/hicolor/${s}/apps"
+    mkdir -p "$_dst"
+    case "$s" in
+      256x256) _src="$_optdir/usr/share/icons/hicolor/256x256@2/apps/lumina-browser.png" ;;
+      *)       _src="$_optdir/usr/share/icons/hicolor/${s}/apps/lumina-browser.png" ;;
+    esac
+    [ -f "$_src" ] && cp "$_src" "$_dst/lumina-browser.png"
+  done
+}
