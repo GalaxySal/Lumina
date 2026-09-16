@@ -106,8 +106,12 @@ jobs:
           # Install llama-cpp-python with platform-specific optimizations/wheels
           if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
               echo "Installing llama-cpp-python for macOS (Metal)..."
-              # Try to use pre-built Metal wheel, fallback to build with Metal enabled
-              CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir --prefer-binary --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/metal
+              # The community Metal wheel on abetlen.github.io/llama-cpp-python/whl/metal
+              # is corrupt for 0.3.35 on macOS/arm64 (BadZipFile: bad CRC-32 on
+              # lib/cmake/ggml/ggml-config.cmake; it is tagged py3-none, not a real Metal
+              # wheel, and PyPI ships no macOS wheel). Build from source with Metal instead
+              # of fetching the broken wheel.
+              CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir --no-binary llama-cpp-python llama-cpp-python
           elif [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
               echo "Installing llama-cpp-python for Windows..."
               # Use CPU/CUDA wheel if available, or build
