@@ -1,0 +1,72 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/lumina",
+    "crates/lumina-engine",
+    "crates/lumina-store",
+    "crates/lumina-theme",
+    "crates/lumina-ui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95.0"
+license = "MPL-2.0"
+repository = "https://github.com/GalaxySal/Lumina"
+
+[workspace.dependencies]
+lumina-engine = { path = "crates/lumina-engine" }
+lumina-store = { path = "crates/lumina-store" }
+lumina-theme = { path = "crates/lumina-theme" }
+lumina-ui = { path = "crates/lumina-ui" }
+
+# The Servo version is pinned exactly: upgrading it is its own, single-purpose change.
+servo = { version = "=0.8.0", features = ["webgl"] }
+winit = "0.30.13"
+dpi = "0.1"
+url = "2.5"
+euclid = "0.22"
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
+# egui is held at 0.36 on purpose. It must use the same `glow` major version
+# as Servo so both can share one GL context, and it must NOT share Servo's
+# `vello_cpu` (0.2): Servo turns on that crate's multithreading feature, which
+# egui 0.37's glyph rasteriser cannot run under and panics on the first frame.
+# egui 0.36 uses `vello_cpu` 0.1, a separate copy that Servo does not touch.
+egui = { version = "0.36", default-features = false }
+egui-winit = { version = "0.36", default-features = false, features = ["wayland", "x11"] }
+egui_glow = { version = "0.36", default-features = false }
+glow = "0.17"
+toml = "0.9"
+tempfile = "3"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter"] }
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+# Our own crates stay fully debuggable; dependencies (Servo above all) are
+# optimised and carry no debug info so that dev builds link in bounded memory
+# and pages render at a usable speed.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 1
+debug = false
+
+[profile.release]
+opt-level = 3
+strip = true

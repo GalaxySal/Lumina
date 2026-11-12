@@ -1,0 +1,22 @@
+[package]
+name = "lumina-engine"
+description = "Lumina's embedding layer over the Servo web engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+servo.workspace = true
+winit.workspace = true
+dpi.workspace = true
+url.workspace = true
+euclid.workspace = true
+glow.workspace = true
+rustls.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

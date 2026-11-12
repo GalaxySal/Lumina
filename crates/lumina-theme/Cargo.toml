@@ -1,0 +1,15 @@
+[package]
+name = "lumina-theme"
+description = "Lumina's design tokens, palettes and embedded fonts."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+egui.workspace = true
+lumina-store.workspace = true
+
+[lints]
+workspace = true

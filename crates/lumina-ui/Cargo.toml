@@ -1,0 +1,17 @@
+[package]
+name = "lumina-ui"
+description = "Lumina's own interface: toolbar, address bar, settings and first-run screens."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+egui.workspace = true
+lumina-store.workspace = true
+lumina-theme.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true
