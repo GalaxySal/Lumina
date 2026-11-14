@@ -5,8 +5,9 @@ use dpi::PhysicalSize;
 use euclid::Scale;
 use euclid::default::{Point2D, Rect, Size2D};
 use servo::{
-    Cursor, DevicePoint, EmbedderControl, EmbedderControlId, LoadStatus, Modifiers,
-    OffscreenRenderingContext, Servo, Theme, WebView, WebViewBuilder, WebViewDelegate,
+    CreateNewWebViewRequest, Cursor, DevicePoint, EmbedderControl, EmbedderControlId, LoadStatus,
+    Modifiers, OffscreenRenderingContext, PixelFormat, RenderingContext, Servo, Theme, WebView,
+    WebViewBuilder, WebViewDelegate, WindowRenderingContext,
 };
 use url::Url;
 use winit::event::WindowEvent;
@@ -29,7 +30,6 @@ pub enum LoadState {
 }
 
 /// Something the embedder may want to react to, reported by a [`PageView`].
-#[derive(Clone, Debug)]
 pub enum PageEvent {
     /// A new frame is ready; the embedder should redraw the window.
     FrameReady,
@@ -41,6 +41,14 @@ pub enum PageEvent {
         can_go_back: bool,
         can_go_forward: bool,
     },
+    /// The text a browser shows in its status line changed: the address of
+    /// the link under the pointer, or nothing when there is none.
+    StatusChanged(Option<String>),
+    /// The page's site icon changed, or it no longer has one.
+    FaviconChanged(Option<Favicon>),
+    /// The page asked for a new page to be opened, for instance through a
+    /// link that opens in a new window. Dropping the request refuses it.
+    NewPageRequested(PendingPage),
     /// The pointer should take this shape while over the page.
     CursorChanged(CursorIcon),
     /// An editable field took focus. The embedder should turn the system
@@ -54,6 +62,66 @@ pub enum PageEvent {
     Crashed {
         reason: String,
     },
+}
+
+/// A site's icon as plain pixels: `width * height` RGBA values, row by row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Favicon {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+impl Favicon {
+    /// Converts an icon from the engine's pixel formats. Formats without
+    /// colour, and data of the wrong length, yield nothing.
+    fn from_pixels(width: u32, height: u32, format: PixelFormat, data: &[u8]) -> Option<Self> {
+        let pixels = usize::try_from(width)
+            .ok()?
+            .checked_mul(usize::try_from(height).ok()?)?;
+        if pixels == 0 || data.len() != pixels.checked_mul(4)? {
+            return None;
+        }
+        let rgba = match format {
+            PixelFormat::RGBA8 => data.to_vec(),
+            PixelFormat::BGRA8 => data
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .flat_map(|[blue, green, red, alpha]| [*red, *green, *blue, *alpha])
+                .collect(),
+            PixelFormat::K8 | PixelFormat::KA8 | PixelFormat::RGB8 => return None,
+        };
+        Some(Self {
+            width,
+            height,
+            rgba,
+        })
+    }
+}
+
+/// A page that web content asked to have opened and that is waiting for the
+/// embedder to give it a place. Dropping it refuses the request.
+pub struct PendingPage {
+    request: CreateNewWebViewRequest,
+    window_context: Rc<WindowRenderingContext>,
+}
+
+impl PendingPage {
+    /// Opens the requested page. `on_event` is called as for `Engine::open`.
+    pub fn open(self, scale_factor: f64, on_event: impl Fn(PageEvent) + 'static) -> PageView {
+        let context = Rc::new(
+            self.window_context
+                .offscreen_context(self.window_context.size()),
+        );
+        PageView::build(
+            self.request.builder(context.clone()),
+            context,
+            self.window_context,
+            scale_factor,
+            Box::new(on_event),
+        )
+    }
 }
 
 /// A rectangle in physical pixels, measured from a top-left corner.
@@ -87,22 +155,41 @@ pub struct PageView {
     modifiers: Cell<Modifiers>,
     /// Whether an input method composition is in progress.
     composing: Cell<bool>,
+    /// Whether the engine has been told the page is on screen.
+    visible: Cell<bool>,
 }
 
 impl PageView {
     pub(crate) fn new(
         servo: &Servo,
-        context: Rc<OffscreenRenderingContext>,
+        window_context: Rc<WindowRenderingContext>,
         url: Url,
         scale_factor: f64,
         on_event: Box<dyn Fn(PageEvent)>,
     ) -> Self {
-        let webview = WebViewBuilder::new(servo, context.clone())
-            .url(url)
+        let context = Rc::new(window_context.offscreen_context(window_context.size()));
+        Self::build(
+            WebViewBuilder::new(servo, context.clone()).url(url),
+            context,
+            window_context,
+            scale_factor,
+            on_event,
+        )
+    }
+
+    fn build(
+        builder: WebViewBuilder,
+        context: Rc<OffscreenRenderingContext>,
+        window_context: Rc<WindowRenderingContext>,
+        scale_factor: f64,
+        on_event: Box<dyn Fn(PageEvent)>,
+    ) -> Self {
+        let webview = builder
             .hidpi_scale_factor(Scale::new(scale_factor as f32))
             .delegate(Rc::new(Delegate {
                 on_event,
                 input_method: Cell::new(None),
+                window_context,
             }))
             .build();
 
@@ -113,6 +200,7 @@ impl PageView {
             pointer: Cell::new(DevicePoint::default()),
             modifiers: Cell::new(Modifiers::empty()),
             composing: Cell::new(false),
+            visible: Cell::new(true),
         }
     }
 
@@ -196,6 +284,28 @@ impl PageView {
             .notify_theme_change(if dark { Theme::Dark } else { Theme::Light });
     }
 
+    /// Tells the engine whether the page is on screen. A page that is not
+    /// stops being drawn, so its animations no longer cost anything.
+    ///
+    /// The engine treats being asked about a page it does not know as a bug
+    /// and panics; that is contained here so it can never take Lumina down.
+    pub fn set_visible(&self, visible: bool) {
+        if self.visible.replace(visible) == visible {
+            return;
+        }
+        let webview = &self.webview;
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if visible {
+                webview.show();
+            } else {
+                webview.hide();
+            }
+        }));
+        if outcome.is_err() {
+            tracing::error!(visible, "the engine failed to change a page's visibility");
+        }
+    }
+
     /// Tells the page whether it is what the user is typing into.
     pub fn set_focused(&self, focused: bool) {
         self.webview.set_focused(focused);
@@ -263,9 +373,29 @@ struct Delegate {
     on_event: Box<dyn Fn(PageEvent)>,
     /// The input method request currently being shown, if any.
     input_method: Cell<Option<EmbedderControlId>>,
+    /// The window new pages are opened in.
+    window_context: Rc<WindowRenderingContext>,
 }
 
 impl WebViewDelegate for Delegate {
+    fn notify_status_text_changed(&self, _: WebView, status: Option<String>) {
+        (self.on_event)(PageEvent::StatusChanged(status));
+    }
+
+    fn notify_favicon_changed(&self, webview: WebView) {
+        let favicon = webview.favicon().and_then(|image| {
+            Favicon::from_pixels(image.width, image.height, image.format, image.data())
+        });
+        (self.on_event)(PageEvent::FaviconChanged(favicon));
+    }
+
+    fn request_create_new(&self, _: WebView, request: CreateNewWebViewRequest) {
+        (self.on_event)(PageEvent::NewPageRequested(PendingPage {
+            request,
+            window_context: self.window_context.clone(),
+        }));
+    }
+
     fn notify_new_frame_ready(&self, _: WebView) {
         (self.on_event)(PageEvent::FrameReady);
     }
@@ -329,6 +459,33 @@ impl WebViewDelegate for Delegate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn favicons_are_converted_to_rgba() {
+        let rgba = [1, 2, 3, 255, 4, 5, 6, 128];
+        assert_eq!(
+            Favicon::from_pixels(2, 1, PixelFormat::RGBA8, &rgba)
+                .unwrap()
+                .rgba,
+            rgba
+        );
+        assert_eq!(
+            Favicon::from_pixels(2, 1, PixelFormat::BGRA8, &rgba)
+                .unwrap()
+                .rgba,
+            [3, 2, 1, 255, 6, 5, 4, 128]
+        );
+    }
+
+    #[test]
+    fn malformed_or_colourless_favicons_are_dropped() {
+        assert_eq!(
+            Favicon::from_pixels(2, 2, PixelFormat::RGBA8, &[0; 8]),
+            None
+        );
+        assert_eq!(Favicon::from_pixels(0, 0, PixelFormat::RGBA8, &[]), None);
+        assert_eq!(Favicon::from_pixels(1, 1, PixelFormat::K8, &[0; 4]), None);
+    }
 
     #[test]
     fn an_area_contains_its_inside_and_top_left_edge_only() {

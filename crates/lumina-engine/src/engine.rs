@@ -2,10 +2,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use dpi::PhysicalSize;
-use servo::{
-    EventLoopWaker, OffscreenRenderingContext, RenderingContext, Servo, ServoBuilder,
-    WindowRenderingContext,
-};
+use servo::{EventLoopWaker, RenderingContext, Servo, ServoBuilder, WindowRenderingContext};
 use url::Url;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::window::Window;
@@ -80,13 +77,9 @@ impl Engine {
         scale_factor: f64,
         on_event: impl Fn(PageEvent) + 'static,
     ) -> PageView {
-        let page_context: Rc<OffscreenRenderingContext> = Rc::new(
-            self.window_context
-                .offscreen_context(self.window_context.size()),
-        );
         PageView::new(
             &self.servo,
-            page_context,
+            self.window_context.clone(),
             url,
             scale_factor,
             Box::new(on_event),

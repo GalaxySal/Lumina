@@ -1,6 +1,6 @@
 use egui::text::{CCursor, CCursorRange};
 use egui::{Align, Frame, Id, Key, Layout, Margin, Panel, Pos2, Stroke, TextEdit, Ui, Vec2};
-use lumina_store::Settings;
+use lumina_store::{AddressBar, Settings};
 use lumina_theme::{FOCUS_WIDTH, HAIRLINE, RADIUS, Theme, mono, size, space};
 
 use crate::text::Strings;
@@ -9,6 +9,8 @@ use crate::{Action, Chrome, Output, PageState, Screen};
 
 const HEIGHT: f32 = 46.0;
 const FIELD_HEIGHT: f32 = 30.0;
+/// How wide the address bar is when it sits in the middle of the toolbar.
+const CENTERED_WIDTH: f32 = 680.0;
 
 fn address_id() -> Id {
     Id::new("lumina-address-bar")
@@ -61,7 +63,13 @@ pub(crate) fn show(
                         chrome.toggle_settings();
                     }
                     ui.add_space(space::S);
-                    address_bar(chrome, ui, theme, settings, strings, page, output);
+                    let room = ui.available_width();
+                    let width = match settings.address_bar {
+                        AddressBar::Wide => room,
+                        AddressBar::Centered => room.min(CENTERED_WIDTH),
+                    };
+                    ui.add_space((room - width) / 2.0);
+                    address_bar(chrome, ui, theme, settings, strings, page, width, output);
                 });
             });
         });
@@ -81,6 +89,7 @@ pub(crate) fn show(
     );
 }
 
+#[expect(clippy::too_many_arguments)]
 fn address_bar(
     chrome: &mut Chrome,
     ui: &mut Ui,
@@ -88,6 +97,7 @@ fn address_bar(
     settings: &Settings,
     strings: &Strings,
     page: PageState<'_>,
+    width: f32,
     output: &mut Output,
 ) {
     let p = theme.palette;
@@ -112,7 +122,7 @@ fn address_bar(
         .font(mono(size::MONO))
         .text_color(p.ink)
         .hint_text(strings.address_hint)
-        .desired_width(ui.available_width())
+        .desired_width(width - 22.0)
         .min_size(Vec2::new(0.0, FIELD_HEIGHT))
         .vertical_align(Align::Center)
         .frame(

@@ -6,7 +6,9 @@ use egui::{
     Align, Align2, Frame, Layout, Margin, Pos2, RichText, ScrollArea, Sense, Stroke, TextEdit, Ui,
     Vec2,
 };
-use lumina_store::{Accent, Appearance, Language, Problem, SearchEngine, Settings, StartPage};
+use lumina_store::{
+    Accent, AddressBar, Appearance, Language, Problem, SearchEngine, Settings, StartPage, TabLayout,
+};
 use lumina_theme::{
     FOCUS_WIDTH, HAIRLINE, MEASURE, RADIUS, Theme, accent_color, mono, sans, sans_medium, serif,
     size, space,
@@ -80,6 +82,28 @@ pub(crate) fn settings(
 
                 section(ui, theme, narrow, strings.start_page, |ui| {
                     start_page(chrome, ui, theme, strings, &mut next);
+                });
+
+                section(ui, theme, narrow, strings.tabs, |ui| {
+                    for (value, label) in [
+                        (TabLayout::Top, strings.tabs_top),
+                        (TabLayout::Side, strings.tabs_side),
+                    ] {
+                        if choice(ui, theme, next.tab_layout == value, label, None).clicked() {
+                            next.tab_layout = value;
+                        }
+                    }
+                });
+
+                section(ui, theme, narrow, strings.address_bar, |ui| {
+                    for (value, label) in [
+                        (AddressBar::Wide, strings.address_wide),
+                        (AddressBar::Centered, strings.address_centered),
+                    ] {
+                        if choice(ui, theme, next.address_bar == value, label, None).clicked() {
+                            next.address_bar = value;
+                        }
+                    }
                 });
 
                 section(ui, theme, narrow, strings.appearance, |ui| {
@@ -436,6 +460,151 @@ fn numbered(ui: &mut Ui, theme: &Theme, number: u8, label: &str) {
         text(ui, label, serif(size::HEADING), p.ink);
     });
     ui.add_space(space::XS);
+}
+
+/// Divides the page area in two when pages are shown side by side, and draws
+/// the rule between them and a line of accent over the one in front. Returns
+/// the front page's area and the other's.
+pub(crate) fn panes(
+    ui: &Ui,
+    theme: &Theme,
+    whole: egui::Rect,
+    split: Option<bool>,
+) -> (egui::Rect, Option<egui::Rect>) {
+    let Some(front_on_right) = split else {
+        return (whole, None);
+    };
+    let p = theme.palette;
+    let middle = whole.center().x.round();
+    let left = egui::Rect::from_min_max(whole.min, Pos2::new(middle, whole.max.y));
+    let right = egui::Rect::from_min_max(Pos2::new(middle + HAIRLINE, whole.min.y), whole.max);
+    let painter = ui.painter();
+    painter.line_segment(
+        [
+            Pos2::new(middle + HAIRLINE / 2.0, whole.min.y),
+            Pos2::new(middle + HAIRLINE / 2.0, whole.max.y),
+        ],
+        Stroke::new(HAIRLINE, p.rule),
+    );
+    let (front, other) = if front_on_right {
+        (right, left)
+    } else {
+        (left, right)
+    };
+    let y = front.min.y + FOCUS_WIDTH / 2.0;
+    painter.line_segment(
+        [Pos2::new(front.min.x, y), Pos2::new(front.max.x, y)],
+        Stroke::new(FOCUS_WIDTH, p.accent),
+    );
+    (front, Some(other))
+}
+
+/// Shows where the link under the pointer leads, at the foot of the page.
+pub(crate) fn status_line(ui: &Ui, theme: &Theme, page: egui::Rect, status: &str) {
+    let p = theme.palette;
+    let painter = ui.painter();
+    let mut job = egui::text::LayoutJob::single_section(
+        status.to_owned(),
+        egui::TextFormat {
+            font_id: mono(size::SMALL),
+            color: p.ink,
+            ..egui::TextFormat::default()
+        },
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width((page.width() * 0.6).max(120.0));
+    let galley = painter.layout_job(job);
+    let padding = Vec2::new(space::S, space::XS);
+    let height = galley.size().y + padding.y * 2.0;
+    let rect = egui::Rect::from_min_size(
+        Pos2::new(page.min.x, page.max.y - height),
+        Vec2::new(galley.size().x + padding.x * 2.0, height),
+    );
+    painter.rect_filled(
+        rect,
+        egui::CornerRadius {
+            nw: 0,
+            ne: RADIUS,
+            sw: 0,
+            se: 0,
+        },
+        p.raised,
+    );
+    painter.galley(
+        Pos2::new(rect.min.x + padding.x, rect.min.y + padding.y),
+        galley,
+        p.ink,
+    );
+}
+
+/// What a tab shows before it has a page: the name, and one field to say
+/// where to go. Laid out like a title page, a third of the way down.
+pub(crate) fn new_tab(
+    chrome: &mut Chrome,
+    ui: &mut Ui,
+    theme: &Theme,
+    settings: &Settings,
+    strings: &Strings,
+    output: &mut Output,
+) {
+    let p = theme.palette;
+    let id = egui::Id::new("lumina-new-tab-field");
+    Frame::new().fill(p.paper).show(ui, |ui| {
+        ui.set_min_size(ui.available_size());
+        let column = 560.0_f32
+            .min(ui.available_width() - space::L * 2.0)
+            .max(0.0);
+        ui.vertical_centered(|ui| {
+            ui.add_space((ui.available_height() * 0.26).max(space::XL));
+            text(ui, "Lumina", serif(size::DISPLAY), p.ink);
+            ui.add_space(space::L);
+
+            // Nothing else on this page takes typing, so the field has it.
+            if ui.memory(|memory| memory.focused().is_none()) {
+                ui.memory_mut(|memory| memory.request_focus(id));
+            }
+            let focused = ui.memory(|memory| memory.has_focus(id));
+            let outline = if focused {
+                Stroke::new(FOCUS_WIDTH, p.accent)
+            } else {
+                Stroke::new(HAIRLINE, p.rule)
+            };
+            let field = TextEdit::singleline(&mut chrome.new_tab_query)
+                .id(id)
+                .font(sans(size::HEADING))
+                .text_color(p.ink)
+                .hint_text(strings.address_hint)
+                .desired_width(column - 30.0)
+                .frame(
+                    Frame::new()
+                        .fill(p.field)
+                        .stroke(outline)
+                        .corner_radius(RADIUS)
+                        .inner_margin(Margin::symmetric(14, 10)),
+                )
+                .show(ui);
+            if field.response.lost_focus()
+                && ui.input(|input| input.key_pressed(egui::Key::Enter))
+                && !chrome.new_tab_query.trim().is_empty()
+                && let Ok(url) =
+                    lumina_store::resolve(&chrome.new_tab_query, settings.search_engine)
+            {
+                chrome.new_tab_query.clear();
+                output.actions.push(Action::Open(url));
+            }
+
+            ui.add_space(space::M);
+            text(
+                ui,
+                &format!(
+                    "{} {}",
+                    strings.searched_with,
+                    settings.search_engine.name()
+                ),
+                sans(size::SMALL),
+                p.ink_muted,
+            );
+        });
+    });
 }
 
 pub(crate) fn crashed(ui: &mut Ui, theme: &Theme, strings: &Strings, output: &mut Output) {

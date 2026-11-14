@@ -47,11 +47,11 @@ Cargo workspace. Crate'ler küçük ve tek sorumlu kalır; arayüz crate'i motor
 
 ```
 crates/
-  lumina/          ikili; başlatma, olay döngüsü, girdinin arayüz ile sayfa arasında dağıtımı, kare çizimi
+  lumina/          ikili; başlatma, olay döngüsü, sekme yönetimi (`tabs.rs`: motordan bağımsız, sınanabilir sekme kümesi), girdinin arayüz ile sayfa arasında dağıtımı, kare çizimi
   lumina-engine/   Servo gömme katmanı: sayfa yaşam döngüsü, gezinme, girdi çevirisi, IME
-  lumina-ui/       egui arayüzü: araç çubuğu, adres çubuğu, ayarlar ve ilk kurulum ekranı, çeviri tabloları
+  lumina-ui/       egui arayüzü: sekme çubuğu (üstte ya da solda), araç çubuğu, adres çubuğu, yeni sekme sayfası, ayarlar ve ilk kurulum ekranı, çeviri tabloları
   lumina-theme/    tasarım belirteçleri, açık/koyu paletler, vurgu renkleri, gömülü fontlar
-  lumina-store/    kalıcı veri: settings.toml, arama motorları, adres/arama ayrımı
+  lumina-store/    kalıcı veri: settings.toml, session.toml (açık sekmeler), arama motorları, adres/arama ayrımı
 assets/fonts/      Newsreader, Alegreya Sans, IBM Plex Mono (OFL) ve lisans metinleri
 docs/screenshots/  gerçek çalıştırmalardan alınmış ekran görüntüleri
 ```
@@ -155,7 +155,7 @@ cargo clippy --workspace --all-targets -- -D warnings # lint (panik yasakları d
 cargo fmt --all                                       # biçimlendirme
 ```
 
-Kısayollar: Ctrl+L adres çubuğu, Ctrl+R / F5 yenile, Alt+Sol / Alt+Sağ geri / ileri, Ctrl+, ayarlar, Esc ayarları kapat.
+Kısayollar: Ctrl+T yeni sekme, Ctrl+W sekmeyi kapat, Ctrl+Shift+T kapatılanı geri aç, Ctrl+Tab / Ctrl+Shift+Tab sonraki / önceki sekme, Ctrl+1–8 o sıradaki sekme, Ctrl+9 son sekme, Ctrl+L adres çubuğu, Ctrl+R / F5 yenile, Alt+Sol / Alt+Sağ geri / ileri, Ctrl+, ayarlar, Esc ayarları kapat.
 
 `RUST_LOG=warn,lumina=trace` her pencere olayını günlüğe yazar.
 
@@ -183,9 +183,16 @@ Yapılanlar:
 - Kalıcı ayarlar (`$XDG_CONFIG_HOME/lumina/settings.toml`): arama motoru, açılış sayfası, görünüm, vurgu rengi, dil. Bozuk dosya ya da geçersiz değer uygulamayı durdurmaz; ayarlar ekranında satır numarasıyla bildirilir.
 - İlk kurulum ekranı ve ayarlar ekranı; Türkçe ve İngilizce arayüz.
 - Sayfa çökünce gösterilen "yeniden yükle" ekranı ve sitelere `prefers-color-scheme` iletimi.
+- Sekmeler: üstte yatay ya da solda dikey (ayardan seçilir); yeni sekme, kapatma (düğme, orta tık, Ctrl+W), geçiş, sürükleyerek sıralama, kapatılanı geri açma, site simgesi, yükleme göstergesi. Yeni pencere açan bağlantılar açan sekmenin hemen yanında yeni sekmede açılır.
+- Oturum geri yükleme: açık sekmeler `$XDG_STATE_HOME/lumina/session.toml` içinde saklanır. Açılışta yalnızca öndeki sekme yüklenir; diğerleri tıklanınca yüklenir. Komut satırında adres verilirse geri yüklenen sekmelere ek bir sekme olarak açılır.
+- Lumina'nın kendi yeni sekme sayfası (ad ve tek bir arama/adres alanı) ve adres çubuğunu ortalama seçeneği.
 
-Kullanıcının belirlediği sıradaki aşamalar (2026-11-12): sekmeler; indirmeler; geçmiş ve yer imleri; reklam engelleyici; saydamlık (hem pencerenin kendisi hem araç çubuğu ve diğer arayüz yüzeyleri; sonradan eklenmiş bir efekt değil, tema modelinin yerleşik bir parçası olarak — kullanıcı tema seçerken saydamlığı da ayarlayabilmeli. Saydamlık düz opaklık demektir: yüzeyin rengi belirli bir oranda arkasını gösterir, o kadar. Bulanıklaştırma, buzlu cam, parlama ya da ışık kırılması gibi cam efektleri (glassmorphism) yapılmaz. Metin kontrastı saydamken de WCAG AA altına düşmemeli). Kullanıcının kullanım limiti dar olduğunda önce en küçük işi yap ve işi küçük, tek başına biten parçalara böl.
+Kullanıcının belirlediği sıradaki aşamalar (2026-11-12; sekmeler 2026-11-14'te tamamlandı): indirmeler; geçmiş ve yer imleri; reklam engelleyici; saydamlık (hem pencerenin kendisi hem araç çubuğu ve diğer arayüz yüzeyleri; sonradan eklenmiş bir efekt değil, tema modelinin yerleşik bir parçası olarak — kullanıcı tema seçerken saydamlığı da ayarlayabilmeli. Saydamlık düz opaklık demektir: yüzeyin rengi belirli bir oranda arkasını gösterir, o kadar. Bulanıklaştırma, buzlu cam, parlama ya da ışık kırılması gibi cam efektleri (glassmorphism) yapılmaz. Metin kontrastı saydamken de WCAG AA altına düşmemeli). Kullanıcının kullanım limiti dar olduğunda önce en küçük işi yap ve işi küçük, tek başına biten parçalara böl.
 
 Sürüm planı (kullanıcının isteği, 2026-11-12): eksikler tamamlandıktan sonra GitHub Releases üzerinden sürüm çıkarılacak; hedef hem Void Linux'a kurulabilir bir paket (xbps) hem de tüm Linux dağıtımlarında çalışan bir dağıtım biçimi. Depoda eski Tauri sürümüne ait 13 Release ve etiket duruyor (v0.2.0 – v0.3.7, v0.3.7 hâlâ "Latest" görünüyor); bunlar eski dala ait olarak işaretlenecek/taşınacak ve yeni Lumina'nın sürüm numaraları onlarla çakışmayacak. Nasıl taşınacağı kullanıcıya sorulmadan yapılmaz.
 
-Henüz yapılmayanların tamamı: sekmeler; yeni pencere açan bağlantılar; sayfa içi denetimler (`<select>` listesi, dosya ve renk seçici, `alert`/`confirm`/`prompt`, sağ tık menüsü — şu an Servo'nun varsayılan yanıtı veriliyor); izin istemleri; dokunmatik girdi; indirmeler; geçmiş ve yer imleri; oturum geri yükleme; sayfada bul ve yakınlaştırma; reklam engelleyici; tema dosyaları ve tema düzenleyici; sistemin koyu tema tercihini Wayland'da okuma (portal); gizli pencere; EME + ClearKey ve WebRTC doğrulaması; erişilebilirlik ağacı (AccessKit); panik yakalama sınırları; performans bütçesi ölçümleri; paketleme; Windows ve macOS; Widevine.
+Sekmelerin geri kalanı (2026-11-14): sabitlenmiş sekmeler (başta durur, üst şeritte yalnızca simge, kapatma düğmesi yok); adlandırılabilir, renkli, katlanabilir sekme grupları; iki sayfayı yan yana gösteren bölünmüş görünüm; sekme ve grup sağ tık menüleri; orta tık ya da Ctrl+tık ile bağlantıyı arka planda yeni sekmede açma; imlecin altındaki bağlantının adresini sayfanın altında gösterme. Görünmeyen sayfalar motora "gizli" bildirilir (Servo'nun bu çağrıları `expect` içerdiği için `PageView::set_visible` içinde `catch_unwind` ile sarılı); 30 dakikadır görünmeyen, sabitlenmemiş ve yüklenmesi bitmiş sayfalar bellekten bırakılır ve sekmeye dönülünce yeniden yüklenir.
+
+Sekmelerde bilinen eksikler: bölünmüş görünümde yalnızca öndeki sayfa fare olaylarını alır, diğerine geçmek için önce tıklamak gerekir ve bölme oranı sabittir (yarı yarıya); bellekten bırakılan bir sayfadaki doldurulmuş form içeriği kaybolur; bölünmüş görünüm oturumda saklanmaz; oturum dosyası arayüz iş parçacığında yazılıyor (küçük ve seyrek, ama performans bütçesindeki "engelleyen G/Ç yok" kuralına aykırı).
+
+Henüz yapılmayanların tamamı: sayfa içi denetimler (`<select>` listesi, dosya ve renk seçici, `alert`/`confirm`/`prompt`, sağ tık menüsü — şu an Servo'nun varsayılan yanıtı veriliyor); izin istemleri; dokunmatik girdi; indirmeler; geçmiş ve yer imleri; sayfada bul ve yakınlaştırma; reklam engelleyici; tema dosyaları ve tema düzenleyici; sistemin koyu tema tercihini Wayland'da okuma (portal); gizli pencere; EME + ClearKey ve WebRTC doğrulaması; erişilebilirlik ağacı (AccessKit); panik yakalama sınırları; performans bütçesi ölçümleri; paketleme; Windows ve macOS; Widevine.

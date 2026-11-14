@@ -11,4 +11,4 @@ mod view;
 
 pub use engine::Engine;
 pub use error::EngineError;
-pub use view::{Area, LoadState, PageEvent, PageView};
+pub use view::{Area, Favicon, LoadState, PageEvent, PageView, PendingPage};

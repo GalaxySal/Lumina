@@ -1,20 +1,21 @@
 //! Lumina, an original desktop web browser.
 
 mod app;
+mod tabs;
 
 use anyhow::{Context, Result};
 use lumina_store::Settings;
 use url::Url;
 use winit::event_loop::EventLoop;
 
-use crate::app::{App, Wake};
+use crate::app::{App, Paths, Wake};
 
 const USAGE: &str = "\
 Usage: lumina [ADDRESS OR SEARCH WORDS]
 
-With no address, Lumina opens your start page.
-Text that is not an address is searched for with your search engine.
-Both are chosen in Settings.";
+With no address, Lumina opens the tabs you had open last time, or your
+start page. Text that is not an address is searched for with your search
+engine. Both are chosen in Settings.";
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -33,11 +34,14 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let config_dir = lumina_store::config_dir();
-    if config_dir.is_none() {
+    let paths = Paths {
+        config: lumina_store::config_dir(),
+        state: lumina_store::state_dir(),
+    };
+    if paths.config.is_none() {
         tracing::warn!("no settings folder could be determined; settings will not be kept");
     }
-    let loaded = match &config_dir {
+    let loaded = match &paths.config {
         Some(dir) => lumina_store::load(dir),
         None => lumina_store::LoadedSettings {
             settings: Settings::default(),
@@ -48,12 +52,12 @@ fn main() -> Result<()> {
         tracing::warn!(?problem, "the settings file has a problem");
     }
 
-    let url = start_url(&arguments, &loaded.settings)?;
+    let requested = requested_url(&arguments, &loaded.settings)?;
 
     let event_loop = EventLoop::<Wake>::with_user_event()
         .build()
         .context("could not connect to the display server")?;
-    let mut app = App::new(url, loaded, config_dir, event_loop.create_proxy());
+    let mut app = App::new(requested, loaded, paths, event_loop.create_proxy());
     event_loop
         .run_app(&mut app)
         .context("the window system stopped unexpectedly")?;
@@ -61,36 +65,31 @@ fn main() -> Result<()> {
     app.into_result()
 }
 
-/// The address to open first: what was typed on the command line, or the
-/// user's start page when nothing was.
-fn start_url(arguments: &[String], settings: &Settings) -> Result<Url> {
+/// The address asked for on the command line, if there was one.
+fn requested_url(arguments: &[String], settings: &Settings) -> Result<Option<Url>> {
     if arguments.is_empty() {
-        return settings
-            .start_url()
-            .context("the start page address is not valid");
+        return Ok(None);
     }
     let text = arguments.join(" ");
     lumina_store::resolve(&text, settings.search_engine)
+        .map(Some)
         .with_context(|| format!("\"{text}\" could not be turned into an address to open"))
 }
 
 #[cfg(test)]
 mod tests {
-    use lumina_store::{SearchEngine, StartPage};
+    use lumina_store::SearchEngine;
 
     use super::*;
 
-    fn run(arguments: &[&str], settings: &Settings) -> Url {
+    fn run(arguments: &[&str], settings: &Settings) -> Option<Url> {
         let arguments: Vec<String> = arguments.iter().map(|text| (*text).to_owned()).collect();
-        start_url(&arguments, settings).unwrap()
+        requested_url(&arguments, settings).unwrap()
     }
 
     #[test]
-    fn no_argument_opens_the_start_page() {
-        let mut settings = Settings::default();
-        assert_eq!(run(&[], &settings).as_str(), SearchEngine::default().home());
-        settings.start_page = StartPage::Custom(Url::parse("https://example.org/").unwrap());
-        assert_eq!(run(&[], &settings).as_str(), "https://example.org/");
+    fn no_argument_asks_for_nothing() {
+        assert_eq!(run(&[], &Settings::default()), None);
     }
 
     #[test]
@@ -100,11 +99,11 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(
-            run(&["example.com"], &settings).as_str(),
+            run(&["example.com"], &settings).unwrap().as_str(),
             "https://example.com/"
         );
         assert_eq!(
-            run(&["rust", "nedir"], &settings).as_str(),
+            run(&["rust", "nedir"], &settings).unwrap().as_str(),
             "https://search.brave.com/search?q=rust+nedir"
         );
     }

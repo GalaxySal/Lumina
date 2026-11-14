@@ -15,6 +15,11 @@ Chromium or Firefox, and it does not wrap a system WebView.
 Early, but real. What exists today:
 
 - A native window that loads and displays real web pages through Servo.
+- Tabs, across the top or down the side: open, close, reorder by dragging,
+  reopen the last closed one. Links that ask for a new window open in a new
+  tab. Open tabs are remembered and come back at the next start. Tabs can be
+  pinned, gathered into named, coloured groups, and shown two at a time side
+  by side. Middle-click or Ctrl+click opens a link in a background tab.
 - A toolbar with back, forward, reload and an address bar. Text that names a
   site is visited; anything else is searched for.
 - Mouse, wheel and keyboard input, including input methods (IME) for
@@ -27,7 +32,7 @@ Early, but real. What exists today:
 
 ![The first-run screen in the dark theme](docs/screenshots/first-run-dark.png)
 
-What does not exist yet: tabs, downloads, history, bookmarks, the ad blocker,
+What does not exist yet: downloads, history, bookmarks, the ad blocker,
 theme files, permission prompts and in-page pickers and dialogs. See
 [CLAUDE.md](CLAUDE.md) (in Turkish) for the full list.
 
@@ -51,8 +56,9 @@ cargo run -p lumina -- example.com           # open a site
 cargo run -p lumina -- how do tides work     # search with your search engine
 ```
 
-Shortcuts: Ctrl+L address bar, Ctrl+R or F5 reload, Alt+Left / Alt+Right
-back / forward, Ctrl+, settings.
+Shortcuts: Ctrl+T new tab, Ctrl+W close tab, Ctrl+Shift+T reopen closed tab,
+Ctrl+Tab next tab, Ctrl+1–9 tab by position, Ctrl+L address bar, Ctrl+R or F5
+reload, Alt+Left / Alt+Right back / forward, Ctrl+, settings.
 
 The first build compiles Servo and takes a long time.
 

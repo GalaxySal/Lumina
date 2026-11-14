@@ -11,13 +11,31 @@ pub fn config_dir() -> Option<PathBuf> {
     config_dir_from(|name| std::env::var_os(name))
 }
 
+/// The directory Lumina keeps what it remembers between runs in, such as the
+/// open tabs: `$XDG_STATE_HOME/lumina`, or `~/.local/state/lumina`.
+pub fn state_dir() -> Option<PathBuf> {
+    dir_from(
+        |name| std::env::var_os(name),
+        "XDG_STATE_HOME",
+        ".local/state",
+    )
+}
+
 fn config_dir_from(variable: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    dir_from(variable, "XDG_CONFIG_HOME", ".config")
+}
+
+fn dir_from(
+    variable: impl Fn(&str) -> Option<OsString>,
+    xdg_variable: &str,
+    home_fallback: &str,
+) -> Option<PathBuf> {
     let absolute = |name: &str| {
         variable(name)
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
     };
-    let base = absolute("XDG_CONFIG_HOME").or_else(|| Some(absolute("HOME")?.join(".config")))?;
+    let base = absolute(xdg_variable).or_else(|| Some(absolute("HOME")?.join(home_fallback)))?;
     Some(base.join("lumina"))
 }
 
@@ -55,6 +73,15 @@ mod tests {
         assert_eq!(
             with(&[("XDG_CONFIG_HOME", "config"), ("HOME", "/home/ayşe")]),
             Some(PathBuf::from("/home/ayşe/.config/lumina"))
+        );
+    }
+
+    #[test]
+    fn state_has_its_own_place() {
+        let variable = |name: &str| (name == "HOME").then(|| OsString::from("/home/ayşe"));
+        assert_eq!(
+            dir_from(variable, "XDG_STATE_HOME", ".local/state"),
+            Some(PathBuf::from("/home/ayşe/.local/state/lumina"))
         );
     }
 

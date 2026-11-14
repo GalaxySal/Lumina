@@ -9,6 +9,8 @@ pub struct Palette {
     pub paper: Color32,
     /// The toolbar and other surfaces that sit above the page.
     pub raised: Color32,
+    /// The tab strip: a surface that sits behind the toolbar.
+    pub sunken: Color32,
     /// The inside of text fields.
     pub field: Color32,
     /// Running text.
@@ -37,6 +39,7 @@ impl Theme {
             Palette {
                 paper: Color32::from_rgb(0x1F, 0x1B, 0x18),
                 raised: Color32::from_rgb(0x2A, 0x25, 0x20),
+                sunken: Color32::from_rgb(0x17, 0x14, 0x11),
                 field: Color32::from_rgb(0x17, 0x14, 0x11),
                 ink: Color32::from_rgb(0xED, 0xE4, 0xD3),
                 ink_muted: Color32::from_rgb(0xA9, 0x9E, 0x8E),
@@ -49,6 +52,7 @@ impl Theme {
             Palette {
                 paper: Color32::from_rgb(0xF4, 0xEF, 0xE4),
                 raised: Color32::from_rgb(0xEA, 0xE3, 0xD3),
+                sunken: Color32::from_rgb(0xE2, 0xDA, 0xC8),
                 field: Color32::from_rgb(0xFB, 0xF8, 0xF1),
                 ink: Color32::from_rgb(0x2A, 0x24, 0x20),
                 ink_muted: Color32::from_rgb(0x66, 0x5D, 0x53),
@@ -114,6 +118,8 @@ mod tests {
                 (p.ink_muted, p.paper, "muted on paper"),
                 (p.ink_muted, p.raised, "muted on raised"),
                 (p.ink_muted, p.field, "muted in field"),
+                (p.ink, p.sunken, "ink on sunken"),
+                (p.ink_muted, p.sunken, "muted on sunken"),
                 (p.accent, p.paper, "accent on paper"),
                 (p.accent, p.raised, "accent on raised"),
                 (p.on_accent, p.accent, "text on accent"),

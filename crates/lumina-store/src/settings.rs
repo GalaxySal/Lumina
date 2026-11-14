@@ -64,7 +64,7 @@ impl Accent {
         }
     }
 
-    fn from_id(id: &str) -> Option<Self> {
+    pub(crate) fn from_id(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|value| value.id() == id)
     }
 }
@@ -95,6 +95,56 @@ impl Language {
     }
 }
 
+/// Where the tabs are shown.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TabLayout {
+    /// A strip across the top of the window.
+    #[default]
+    Top,
+    /// A column down the left side.
+    Side,
+}
+
+impl TabLayout {
+    pub const ALL: [Self; 2] = [Self::Top, Self::Side];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Top => "top",
+            Self::Side => "side",
+        }
+    }
+
+    fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|value| value.id() == id)
+    }
+}
+
+/// How the address bar sits in the toolbar.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum AddressBar {
+    /// It fills the toolbar.
+    #[default]
+    Wide,
+    /// It keeps a comfortable width in the middle of the toolbar.
+    Centered,
+}
+
+impl AddressBar {
+    pub const ALL: [Self; 2] = [Self::Wide, Self::Centered];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Wide => "wide",
+            Self::Centered => "centered",
+        }
+    }
+
+    fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|value| value.id() == id)
+    }
+}
+
 /// What Lumina opens when it starts without being given an address.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum StartPage {
@@ -116,6 +166,8 @@ pub struct Settings {
     pub accent: Accent,
     pub language: Language,
     pub start_page: StartPage,
+    pub tab_layout: TabLayout,
+    pub address_bar: AddressBar,
 }
 
 impl Settings {
@@ -140,6 +192,8 @@ impl Settings {
         set("appearance", Value::String(self.appearance.id().into()));
         set("accent", Value::String(self.accent.id().into()));
         set("language", Value::String(self.language.id().into()));
+        set("tab_layout", Value::String(self.tab_layout.id().into()));
+        set("address_bar", Value::String(self.address_bar.id().into()));
         set(
             "start_page",
             Value::String(match &self.start_page {
@@ -284,6 +338,20 @@ fn parse(text: &str) -> LoadedSettings {
             .map(|language| settings.language = language)
             .is_some()
     });
+    read("tab_layout", &mut |value| {
+        value
+            .as_str()
+            .and_then(TabLayout::from_id)
+            .map(|layout| settings.tab_layout = layout)
+            .is_some()
+    });
+    read("address_bar", &mut |value| {
+        value
+            .as_str()
+            .and_then(AddressBar::from_id)
+            .map(|address_bar| settings.address_bar = address_bar)
+            .is_some()
+    });
     read("start_page", &mut |value| {
         value
             .as_str()
@@ -346,6 +414,8 @@ mod tests {
             accent: Accent::Olive,
             language: Language::Turkish,
             start_page: StartPage::Custom(Url::parse("https://example.com/giriş").unwrap()),
+            tab_layout: TabLayout::Side,
+            address_bar: AddressBar::Centered,
         };
         // The folder does not exist yet; saving must create it.
         let nested = dir.path().join("lumina");
